@@ -126,6 +126,62 @@ These are standing constraints, not route steps. Every session respects them.
   `fiscal_year` sits inside the embedded prefix, so 54 filings / 9,926 chunks were re-embedded
   (~$0.13, in place, since point ids derive from position not `chunk_id`).
 
+- [03 — Inline-XBRL strip and text reflow](issues/03-xbrl-strip-and-reflow.md) — **step 1 was
+  already done; step 2 removed a correctness defect entirely.** The existing strip already
+  banks §2.3's headline 17.7%, landing within **1,498 tokens** of the arch doc's own claimed
+  result — so the "single biggest preprocessing win" was never outstanding. It does delete the
+  cover page in 143 files, as ticket 01 suspected, but that is **0.04% of the corpus** and
+  checkbox boilerplate: quantified and accepted, not switched. Reflow was the real work:
+  **0 of 55 sections contained a blank line**, so the preferred paragraph split never fired,
+  and **3.6% of chunks fused two sections under one label**. Now **0%**, with block joins down
+  88.8% → 36.3% (all residual are correctly-guarded abbreviations). Corrects ticket 01: the
+  sentence splitter *does* work — §2.4 is about **block** boundaries. Re-indexed with
+  `--recreate` to avoid orphans: **29,499 → 30,348 points**, ~$0.40. 185 tests green.
+
+- [07 — Machine-generated coverage statement](issues/07-coverage-statement.md) — **the answer
+  now states what it stands on**, computed once and used twice: fed to the model so its prose
+  hedges proportionately, and returned in `retrieval_meta` so the UI renders the authoritative
+  copy. Unit is **distinct filings, never passages** — the context held 7 Merck passages from
+  *1* filing. `1 of 1` (thin corpus) is distinguished from `3 of 17` (budget choice), so
+  `JPM 2 of 4` is shown without being flagged. `PROMPT_VERSION` → **v6**. Corrects this
+  ticket's own claim that coverage was already computed in `ingest.py` — it was not.
+  **The change made something worse first:** given counts alone the model wrote *"No filings
+  are available for companies except…"*, which is false — ABBV and TMO exist but were not
+  retrieved. Fixed by telling it the census is of the context, not the corpus.
+- [06 — Table-caption binding](issues/06-table-caption-binding.md) — figures with no stated
+  scale down from **113 of 405 (28%) to 15 of 405 (4%)**; on the NVIDIA question, **5 of 5**
+  table-bearing citations now show `($ in millions)` beside the number. Carries the caption and
+  period header into any window cut below them, using **only the filing's own lines**. The
+  guard matters more than the feature: the walk stops at prose, because a caption in
+  *thousands* bolted onto figures in *millions* reads as authoritative. Took three attempts to
+  measure honestly (the cover page and the table of contents both look like tables), and the
+  first version of the test flagged a share-count table that needed no caption at all.
+
+- [02 — Measure what the existing item segmenter achieves](issues/02-measure-segmenter.md) —
+  **verdict (a): keep it.** Across all 246 filings it puts a median **98%** of a 10-K body and
+  **96%** of a 10-Q inside a named item, against the **78%** §2.5 reports for the aligner it
+  recommends *building* — it already is that aligner, and rewriting it would have risked a
+  regression for no gain. Found 27 filings detecting zero items, from two causes: a colon/dash
+  header form §2.5 lists that the pattern never allowed (**11 filings, one character** — now
+  27 → 15), and 15 that genuinely have no body item headers (JNJ structures its 10-Qs by
+  `NOTE 11 — LEGAL PROCEEDINGS`; their text is still chunked under `UNLABELLED`). The widening
+  regressed AMD — a quoted cross-reference `“Part I, Item 1A—Risk Factors”` cut Item 1 from 19
+  chunks to 1 — caught by diffing every label against the live index, and fixed by making the
+  quote guard walk back for an unclosed quote rather than checking one character.
+
+- [04 — Reranker choice and chunk size](issues/04-reranker-and-chunk-size.md) — **chunks stay
+  at 800; reranker is `Xenova/ms-marco-MiniLM-L-6-v2`, local via FastEmbed (no API, no key,
+  328 ms/20 docs, apache-2.0).** The coupling resolved toward the chunker because the window
+  turned out not to be a choice: **every FastEmbed reranker truncates at 512 tokens**, measured
+  — a marker at token 300 moves the score, at token 600 it moves by exactly 0.0000, including
+  for `jina-v1-turbo` which advertises 8192. So 74.5% of chunks are truncated and **26.8% of
+  indexed text does not influence ranking**. Accepted: the reranker *orders* candidates rather
+  than reading them, ticket 03's reflow means the first 512 tokens are a real block opening,
+  and shrinking to ~480 would cut Item 1A mid-risk-factor (median risk factor 607 tokens,
+  17 CFR 229.105(a)). Runs between suppression and the top-k cut so `retrieve_for`'s
+  company-then-section grouping survives. `jina-reranker-v2` excluded on **CC-BY-NC**, pinned
+  by a test. Retrieval 1.0s → 1.7s.
+
 ## Not yet specified
 
 In scope, but not yet sharp enough to ticket. Graduates as the frontier advances.
@@ -134,14 +190,21 @@ In scope, but not yet sharp enough to ticket. Graduates as the frontier advances
   [02 — Measure what the existing item segmenter actually achieves](issues/02-measure-segmenter.md)
   reports whether item boundaries are reliable enough to chunk against. May graduate into
   one ticket or several.
-- **Whether reranking earns its keep on this corpus** (Q3). The decision to *include* a
-  reranker is made; whether it measurably helps here is answerable only once
-  [04](issues/04-reranker-and-chunk-size.md) and [10](issues/10-smoke-eval-and-quality-notes.md)
-  are resolved. If it hurts, that is a finding worth presenting.
-- **Whether the reflow guards are sufficient.** §2.4 names two required guards
-  (abbreviations, heading run-ons). Whether more are needed is visible only after
-  [03](issues/03-xbrl-strip-and-reflow.md) runs against all 246 files — the fixture manifest
-  now gives it `TSLA` and `BAC` to assert against on the first commit.
+- **Whether reranking earns its keep on this corpus** (Q3). [04](issues/04-reranker-and-chunk-size.md)
+  built it and measured its cost (1.0s → 1.7s); whether it improves answers here is now
+  answerable only by [10](issues/10-smoke-eval-and-quality-notes.md). If it hurts, that is a
+  finding worth presenting — and the quota-on/quota-off shape of `entity_coverage@k` means the
+  comparison needs care.
+- **Per-risk-factor chunking for Item 1A** (Q4). Deferred by [04](issues/04-reranker-and-chunk-size.md):
+  most of what it was buying — chunks starting at a semantic boundary — arrived with reflow, and
+  §4.3 notes subcaption detection under-counts, so a mis-bounded chunk may be worse than a
+  cleanly-cut window. Would need the detector's precision measured against hand-labelled ground
+  truth to settle, which §4.3 puts at half a day.
+- **A part-level fallback for the 15 filings with no body item headers.** [02](issues/02-measure-segmenter.md)
+  established these are not a regex gap — JNJ's 10-Qs structure by `NOTE 11 — LEGAL PROCEEDINGS`
+  and never repeat item headers in the body. §2.5's graded fallback (item → **part** →
+  whole-document) would give them `PART I` / `PART II` boundaries, which is better than nothing
+  for 12 JNJ filings. Real new work; not yet clear whether any demo question needs it.
 - **Item 3 Legal Proceedings pointer-chasing** (Q7). Median Item 3 is 57 tokens and
   §229.103 permits it to point elsewhere. The cheap middle path is an `is_pointer: true`
   tag. Not yet clear whether any demo question needs it.

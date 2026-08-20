@@ -3,7 +3,7 @@
     uv run python -m src.eval.metrics
 
 `Recall@k`, `MRR@10`, `nDCG@10` and `entity_coverage@k`. Relevance is **file-level**, per
-SPEC §7.1 and I008: a retrieved chunk contributes its `source_file`, and recall counts distinct
+SPEC §7.1: a retrieved chunk contributes its `source_file`, and recall counts distinct
 files. Twenty chunks from one filing is one filing of coverage.
 
 Two shapes here exist because the naive version would have been misleading:
@@ -104,7 +104,7 @@ class QuestionResult:
     n_files_retrieved: int = 0
     parser_window_agrees: bool | None = None
     suspect: str = ""
-    """Set when a number looks wrong, naming what is suspected — see signal 6."""
+    """Set when a number looks wrong, naming what is suspected."""
 
 
 def score_question(
@@ -134,7 +134,7 @@ def score_question(
         out.parser_window_agrees = derived == tuple(question.expect_fiscal_years)
 
     if out.recall[RANK_K] == 0.0:
-        # Signal 6: a zero must be explained, not published bare. Distinguishing "retrieval
+        # A zero must be explained, not published bare. Distinguishing "retrieval
         # missed" from "the label is unreachable at this k" is the useful part.
         if out.n_files_retrieved and len(relevant) > out.n_files_retrieved * 2:
             out.suspect = (

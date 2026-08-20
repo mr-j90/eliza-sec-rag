@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from src.chunks import Chunk
 
-PROMPT_VERSION = "v5"
+PROMPT_VERSION = "v6"
 
 # The headings the answer must use. Tests assert on these rather than on phrasing, so a
 # reworded prompt that still behaves correctly keeps passing.
@@ -167,6 +167,7 @@ def user_prompt(
     *,
     absent: list[str] | None = None,
     named_present: list[str] | None = None,
+    coverage: str = "",
 ) -> str:
     """The context block plus the question, as one user message.
 
@@ -176,6 +177,12 @@ def user_prompt(
     `absent` names companies the question mentioned that this corpus does not hold. Telling
     the model rather than leaving it to infer is what makes the refusal reliable: rule 3 then
     has a fact to act on instead of an absence to notice.
+
+    `coverage` is the same deterministic sentence the UI renders (v6). The model is given it
+    as a **fact about the context**, not asked to derive one: a coverage claim the model
+    computed could be wrong, and this is precisely the claim a reader would trust. It exists
+    so the prose can hedge in proportion to the evidence — an industry-level answer resting on
+    two companies should not read like one resting on twenty.
     """
     passages = "\n\n".join(
         f"[{handle(index)}] {_label(chunk)}\n{chunk.text}"
@@ -187,7 +194,7 @@ def user_prompt(
 
     # A refusal-only answer replaces the format block rather than adding to it — the five-part
     # skeleton asks for Findings and Comparison, which is exactly what must not appear. Placed
-    # last for the same reason the format block is: I006 measured that anything which must be
+    # last for the same reason the format block is: v3 measured that anything which must be
     # obeyed has to come *after* the context, not before it.
     if absent and not named_present:
         named = ", ".join(absent)
@@ -210,6 +217,27 @@ def user_prompt(
             f"\n\nNote: the question mentions {named}, which this corpus contains no filings "
             f"for. Say so explicitly in your answer, and still answer fully for the companies "
             f"that are present.\n"
+        )
+
+    # v6. Stated as a computed fact, with an explicit instruction to use it rather than
+    # restate it — the deterministic sentence is already rendered beside the answer, so a
+    # paraphrase here would be a second, unverifiable copy of the same claim. What the model
+    # is asked for is proportionality: an industry-level conclusion drawn from one filing per
+    # company must not read like one drawn from twenty.
+    if coverage:
+        notes += (
+            f"\n\nEvidence available to you: {coverage}\n"
+            "Reflect this in Gaps and confidence, and let it temper how broadly you state "
+            "conclusions. Do not describe evidence you were not given.\n"
+            # Measured on the pharmaceutical question: given the counts alone, the model wrote
+            # "No filings are available for companies except [the four listed]" — but this
+            # corpus holds filings for ABBV and TMO too; retrieval simply did not reach them.
+            # That turns a retrieval limit into a false claim about the data, which is worse
+            # than saying nothing. Companies genuinely absent from the corpus arrive through
+            # `absent` above, and only those may be described that way.
+            "This describes the passages you were given, not the whole corpus. Companies not "
+            "listed may still have filings here that this search did not return — say a "
+            "company is absent from the corpus only if you were told so explicitly above.\n"
         )
 
     return (

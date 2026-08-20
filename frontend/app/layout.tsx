@@ -11,8 +11,8 @@ import { listConversations } from "@/lib/db/conversations";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Private Equity Research Assistant",
-  description: "A streaming AI assistant with saved conversation history.",
+  title: "SEC EDGAR Research Assistant",
+  description: "A research assistant for SEC EDGAR filings, powered by AI.",
   icons: {
     icon: "/logo.svg",
   },

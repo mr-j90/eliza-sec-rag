@@ -94,7 +94,7 @@ export function AppSidebar({ groups }: { groups: ConversationGroup[] }) {
               priority
               className="hidden h-7 w-auto dark:block"
             />
-            <span className="text-sm font-semibold">Private Equity Research Assistant</span>
+            <span className="text-sm font-semibold">SEC EDGAR Research Assistant</span>
           </Link>
 
           <Button asChild variant="outline" className="w-full justify-start gap-2">

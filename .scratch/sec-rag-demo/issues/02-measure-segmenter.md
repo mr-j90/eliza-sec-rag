@@ -1,7 +1,7 @@
 # Measure what the existing item segmenter actually achieves
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: 01
 
 ## Question
@@ -54,3 +54,105 @@ Item 8 financial statements.
 Whichever it is, the coverage number goes into the demo walkthrough — "78% of the median
 10-K lands inside a correctly-identified item" is exactly the kind of measured claim the
 panel will probe for.
+
+---
+
+## Answer
+
+**Resolved 2026-08-20. Verdict: (a) — good enough, chunk against it.** Not (b). The existing
+segmenter already beats by a wide margin the target §2.5 sets for the aligner it recommends
+building, and rewriting it would have been a regression risk for no measured gain.
+
+Measured across **all 246 filings**, not sampled.
+
+### Coverage — the number the verdict rests on
+
+| form | filings | min | p25 | **median** | p75 | max |
+|---|---|---|---|---|---|---|
+| 10-K | 89 | 0% | 96% | **98%** | 99% | 99% |
+| 10-Q | 157 | 0% | 94% | **96%** | 98% | 99% |
+
+§2.5 reports its TOC-anchored monotonic aligner reaching "median 10-K coverage 78%". **The
+ported code reaches 98%.** It already *is* a TOC-anchored monotonic aligner — forward scan with
+a cursor, TOC-row rejection checked to end-of-line, quoted-cross-reference rejection, a
+late-detection guard, and a coverage guarantee. §10's critique was written against the SPEC,
+and the code went well past it.
+
+Items detected: **83 of 89 10-Ks and 122 of 157 10-Qs find all 6** in their form's map.
+
+### The 27 outright failures, and their two causes
+
+**27 filings (11%) detected zero items**, concentrated in seven tickers: **DIS 10, JNJ 12**,
+plus CMCSA, COST, INTC, MCD, MS one each. The TOC guard was **not** the culprit — it was
+correctly rejecting table-of-contents rows. In these filings the TOC rows were the *only*
+matches, because the real body headers were in a form the patterns never handled.
+
+**Cause A — a form §2.5 lists and the pattern never allowed.** `_ITEM` was
+`Item\s+{}\.?[\s\xa0|]*{}` — optional **period**, no colon or dash. Comcast writes
+`Item 1A: Risk Factors`; Costco uses a dash; Disney's Part II headers use the colon form. That
+single character cost **11 filings their entire segmentation**. Widened to `[.:\-–—]?`:
+**27 → 15**.
+
+**Cause B — filings that genuinely have no body item headers.** The remaining 15 (JNJ 12,
+INTC, MCD, MS) are not a regex gap. JNJ's 10-Qs structure by `NOTE 11 — LEGAL PROCEEDINGS`,
+and `Risk Factors` appears exactly once in the whole document — as a cross-reference. There is
+nothing to match. §2.5's **graded fallback** (item → **part** → whole-document) would help
+here, since these filings do carry `PART I` / `PART II`; that is real new work and not in this
+ticket. **Their content is still fully chunked and retrievable under `UNLABELLED`** — only the
+section label is missing, and there is a test asserting JNJ still produces >10,000 tokens.
+
+### The widening introduced a regression, which is why the check mattered
+
+Comparing every chunk's label against the live index — rather than assuming only the
+zero-item filings changed — caught **AMD, 23 of 149 chunks relabelled**. Item 1 Business had
+collapsed from **19 chunks to 1**, with Item 1A absorbing the rest.
+
+Cause: AMD writes `see “Part I, Item 1A—Risk Factors” and…`. The dash made it match, and the
+quote guard only checked the character **immediately** before the match — but the opening quote
+sits eight characters earlier, before `Part I,`. Item 1A's boundary jumped from 16.3% of the
+body to 2.3%.
+
+Fixed properly rather than by dropping the dash: `_inside_a_quotation` now walks back up to 48
+characters for an **unclosed** opening quote, stopping at a closing quote or a line break
+because either means the quotation already ended. Only curly quotes are used for the walk — a
+straight `'` is an apostrophe far more often than a quote here (`Management's Discussion`), and
+treating it as one would reject real headers.
+
+Both wins kept: zero-item **15**, coverage medians unchanged at **98% / 96%**, AMD restored to
+19 Business chunks. §2.5's figure that 30.7% of `Item N` mentions are cross-references is why
+this guard carries most of the weight in keeping segmentation honest.
+
+### The other things this ticket asked for
+
+- **`(part, item)` keying** — correct, and verified. `Part II Item 1 — Legal Proceedings` is a
+  distinct label from `Item 1 — Financial Statements`, with a test asserting Apple's 10-Q
+  produces both and no duplicate labels. §2.6's collision affects 125 of 157 10-Qs.
+- **False positives** — Intel's `Item 601(a)` Reg S-K citation is not treated as a header;
+  asserted directly.
+- **Named spot-checks across the five header forms** — Amazon (pipe), Apple (glued behind page
+  furniture), Tesla (ALL CAPS), Meta (zero-space), GOOG 10-Q (zero-space *and* caps). All
+  segment, each parametrised separately so a mean cannot hide one failing.
+
+### Ticket 03's open question, answered
+
+*Would reflowing before segmentation improve detection?* **No, and it is not needed.** The
+premise was that item headers buried mid-line are hard to find — but detection already reaches
+98% coverage without reflow, and the 15 remaining failures have no headers to line-anchor. Reflow
+would change the line structure that `_TOC_ROW` and the late-detection guard depend on, risking
+the 231 filings that work to help none of the 15. Removed from the map's fog as answered rather
+than left open.
+
+### Migration
+
+15 filings relabelled → **1,599 chunks re-embedded**. `item_section` sits in the contextual
+prefix, so a label change is a vector change. Verified no orphans by comparing stored count to
+fresh chunk count per filing — collection **30,348 → 30,383**, green.
+
+### Verification
+
+- `tests/test_segmentation.py` — 14 tests, free tier: the three colon/dash filings, the
+  corpus-wide coverage floor (a regression guard on the medians the walkthrough quotes), the
+  content-never-dropped guarantee on JNJ, the Reg S-K false positive, one test per header form,
+  `(part, item)` keying, and the AMD quoted-cross-reference regression with a unit test on the
+  quote walk itself.
+- **187 tests green**: 159 free python + 28 live, plus 34 frontend.

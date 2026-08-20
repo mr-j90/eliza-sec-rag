@@ -2,7 +2,7 @@
 
 A global top-k returns whichever company writes the most vivid prose: before quotas, the
 assessment's own comparative question came back JPMorgan 15, Tesla 3, Apple 1 of 20. These
-tests are the sharpened G01 signal 1, expressed as checks.
+tests are the fairness bar that replaced it, expressed as checks.
 
 Live tests need Qdrant and a key, and skip loudly rather than pass vacuously.
 """
@@ -37,7 +37,7 @@ def by_ticker(results):
 
 
 def test_every_named_company_gets_a_fair_share(indexed):
-    """G01 signal 1's sharpened bar: representation, not presence.
+    """The bar is representation, not presence.
 
     Presence was satisfiable with one Apple passage against fifteen JPMorgan ones, which
     cannot answer the question the panel asked.
@@ -107,8 +107,8 @@ def test_a_form_scoped_question_is_restricted_to_that_form(indexed):
 
 
 def test_quota_retrieval_stays_inside_the_latency_budget(indexed):
-    """n companies means n filtered searches. G01 signal 4a's budget is 2s and the query
-    embedding must be computed once rather than per company."""
+    """n companies means n filtered searches. The budget is 2s, and the query embedding must
+    be computed once rather than per company."""
     import time
 
     timings = []

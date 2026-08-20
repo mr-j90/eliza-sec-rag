@@ -109,9 +109,7 @@ def test_the_single_call_carries_the_question_and_handled_context():
 
 
 def test_a_blank_question_is_rejected_before_it_costs_a_call():
-    """G00 route entry 1 — filed as a defect against I001.
-
-    `min_length=1` cannot see whitespace, so three spaces used to reach the provider and buy
+    """`min_length=1` cannot see whitespace, so three spaces used to reach the provider and buy
     a citation-bearing non-answer at full price.
     """
     llm = CountingLLM("should never be produced")
@@ -151,7 +149,7 @@ def test_an_unconfigured_provider_fails_loudly_rather_than_answering(monkeypatch
     assert "OPENAI_API_KEY" in response.json()["detail"]
 
 
-# --- the one-call constraint under quotas (I005 signal 4) ---
+# --- the one-call constraint under quotas ---
 
 
 def test_three_company_question_still_makes_exactly_one_llm_call():

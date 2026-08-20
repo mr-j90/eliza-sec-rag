@@ -23,10 +23,22 @@ from src.config import settings
 from src.embed import dense_query, sparse_query
 from src.index import client
 from src.query import QueryPlan, plan
+from src.rerank import FUSION_ONLY, WITH_RERANK, reorder
 
 # Each branch fetches more candidates than the final limit, because fusion needs something
 # to fuse: prefetching exactly k would leave RRF nothing to reorder.
 PREFETCH_LIMIT = 80
+
+
+# Whether the most recent search actually reranked. Reported through `retrieval_description`
+# so `retrieval_meta` never names a step that silently did not run — the model download can
+# fail on a first offline run, and fusion order is a graceful degradation rather than a wrong
+# answer.
+_LAST_RERANKED = False
+
+
+def retrieval_description() -> str:
+    return WITH_RERANK if _LAST_RERANKED else FUSION_ONLY
 
 
 @dataclass(frozen=True)
@@ -156,7 +168,16 @@ def _search(
         Retrieved(chunk=_to_chunk(point.payload or {}), score=point.score or 0.0)
         for point in response.points
     ]
-    return suppress_near_duplicates(candidates)[:k]
+    # Rerank the overfetched, de-duplicated candidates and *then* cut to k. Placed here
+    # rather than on the final merged set for two reasons: this is where there is genuinely
+    # something to choose between (3k candidates for k slots), and `retrieve_for` orders its
+    # output by company-then-section deliberately — reordering that by score would break the
+    # grouping that makes a comparison readable.
+    deduped = suppress_near_duplicates(candidates)
+    ranked, reranked = reorder(question, deduped)
+    global _LAST_RERANKED
+    _LAST_RERANKED = reranked
+    return ranked[:k]
 
 
 # SPEC §5.3: each detected company gets `k/n`, with a floor so a four-company question does

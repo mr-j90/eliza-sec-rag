@@ -25,8 +25,7 @@ class ProviderNotConfigured(RuntimeError):
     """No provider credentials are present.
 
     Deliberately an error rather than a canned answer. A fabricated reply that
-    reads as real is worse than a failure that says what is wrong — see I001
-    signal 4.
+    reads as real is worse than a failure that says what is wrong.
     """
 
 

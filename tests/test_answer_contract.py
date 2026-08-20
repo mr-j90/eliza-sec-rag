@@ -55,7 +55,7 @@ def answers():
     return out
 
 
-# --- signal 1: the refusal, which closes G01 signal 3 ---
+# --- the refusal: an absent company is named, never substituted ---
 
 
 def test_an_absent_company_is_named_and_refused(answers):
@@ -71,8 +71,8 @@ def test_an_absent_company_is_named_and_refused(answers):
 
 
 def test_the_refusal_invents_no_attribution(answers):
-    """G01 signal 3's second half: no ticker in the answer that is absent from the retrieved
-    set. A refusal that names a company it did not retrieve has fabricated an attribution."""
+    """No ticker in the answer may be absent from the retrieved set. A refusal that names a
+    company it did not retrieve has fabricated an attribution."""
     from src.aliases import by_ticker
 
     body = answers[OUT_OF_CORPUS]
@@ -86,7 +86,7 @@ def test_the_refusal_invents_no_attribution(answers):
             )
 
 
-# --- signal 2: one absence must not cost the whole answer ---
+# --- one absence must not cost the whole answer ---
 
 
 def test_a_mixed_question_answers_the_company_it_has(answers):
@@ -104,7 +104,7 @@ def test_a_mixed_question_answers_the_company_it_has(answers):
     )
 
 
-# --- signal 3: SPEC §6's five parts ---
+# --- SPEC §6's five parts ---
 
 
 def test_a_comparative_answer_carries_every_required_section(answers):
@@ -117,9 +117,10 @@ def test_every_answer_carries_the_always_required_sections(answers):
     """Bottom line and gaps are required of every answer. Sources is required of every answer
     that cites something.
 
-    **Amended under I007.** This originally required Sources unconditionally, which was right
-    until refusals stopped citing anything. A pure refusal has nothing to source, and demanding
-    the heading anyway would mean either an empty section or — worse — an invitation to fill it.
+    **Amended when the clean refusal landed (prompt v4).** This originally required Sources
+    unconditionally, which was right until refusals stopped citing anything. A pure refusal has
+    nothing to source, and demanding the heading anyway would mean either an empty section or
+    — worse — an invitation to fill it.
     The rule that survives is the honest one: cite your sources when you have used sources.
     """
     for question, body in answers.items():
@@ -138,7 +139,7 @@ def test_every_answer_carries_the_always_required_sections(answers):
             )
 
 
-# --- signal 4: citations still resolve, one call per question ---
+# --- citations still resolve, one call per question ---
 
 
 def test_every_handle_resolves_across_all_three_panel_questions(answers):
@@ -202,13 +203,11 @@ def test_the_structure_is_stable_across_generations():
         )
 
 
-# --- I007: a refusal answers nothing else ---
+# --- prompt v4: a refusal answers nothing else ---
 
 
 def test_a_pure_refusal_carries_no_findings_for_anyone_else(answers):
-    """G01's sharpened signal 3.
-
-    The question named only Shopify. Before this, the answer said so and then wrote five
+    """The question named only Shopify. Before this, the answer said so and then wrote five
     hundred words about Amazon, Bank of America, Cisco and Goldman Sachs — nothing fabricated,
     the wrong question answered at length. SPEC §10 lists graceful refusal among the three
     things never to cut, and dilution defeats it as surely as invention would.

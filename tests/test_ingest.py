@@ -1,7 +1,7 @@
 """Section-aware chunking over a real filing.
 
-These tests read an actual filing rather than a fixture, because the whole lesson of
-I001 was that filing text defeats assumptions that look reasonable on synthetic input.
+These tests read an actual filing rather than a fixture, because the whole lesson of this
+corpus is that filing text defeats assumptions that look reasonable on synthetic input.
 Expected values are quoted from the document — an independent source of truth, not a
 value recomputed the way the code computes it.
 """
@@ -34,7 +34,7 @@ def test_metadata_comes_from_the_header_block():
 
 
 def test_risk_factors_starts_at_the_header_not_the_toc_or_a_cross_reference():
-    """The lesson from I001, now against the real chunker.
+    """The same lesson, now against the real chunker.
 
     `Item 1A` appears many times in this filing. The TOC row is pipe-delimited
     (`Item 1A. | Risk Factors | 5`). A cross-reference in the forward-looking-statements
@@ -95,7 +95,7 @@ def test_chunk_ids_are_unique_and_traceable():
     assert all(re.match(r"^AAPL-10K-FY2025-2025-10-31-", i) for i in ids[:5]), ids[:5]
 
 
-# --- corpus-wide invariants (I004) ---
+# --- corpus-wide invariants ---
 
 
 def all_filings():

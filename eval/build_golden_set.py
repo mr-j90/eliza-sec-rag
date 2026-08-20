@@ -170,7 +170,7 @@ QUESTIONS: list[dict] = [
         sections=["Item 7 — Management's Discussion and Analysis"],
         note=(
             "Stated verbatim in the assessment brief. Relevance legitimately spans several "
-            "filings and periods, which a single-file label describes badly — flagged in G02."
+            "filings and periods, which a single-file label describes badly."
         ),
     ),
     dict(
@@ -234,7 +234,7 @@ QUESTIONS: list[dict] = [
         sections=["Item 1A — Risk Factors"],
         note=(
             "Stated verbatim in the assessment brief. Names no company, so retrieval must find "
-            "the sector unaided — measured at I004 to already work without filters."
+            "the sector unaided — measured to already work without filters."
         ),
     ),
     dict(

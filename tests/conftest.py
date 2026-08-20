@@ -40,8 +40,8 @@ import pytest
 _LIVE_FIXTURES = frozenset({"indexed", "live"})
 
 # One test gates itself inline rather than through a fixture, so it cannot be caught by
-# fixture name. Listed explicitly; the assertion in `pytest_collection_modifyitems` fails
-# loudly if it is ever renamed, rather than silently dropping it into the free tier.
+# fixture name. Listed explicitly, and `tests/test_tiers.py` asserts the name still exists —
+# a rename would otherwise drop it silently into the free tier, where it skips itself.
 _LIVE_BY_NAME = frozenset({"test_three_company_question_still_makes_exactly_one_llm_call"})
 
 
@@ -57,30 +57,17 @@ def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:
     """Attach `live` by fixture usage, then verify nothing slipped through."""
-    seen_by_name: set[str] = set()
-
     for item in items:
         needs_live = bool(_LIVE_FIXTURES & set(getattr(item, "fixturenames", ())))
         if item.name in _LIVE_BY_NAME:
             needs_live = True
-            seen_by_name.add(item.name)
         if needs_live:
             item.add_marker(pytest.mark.live)
 
-    # A rename would otherwise move a paying test into the free tier, where it would skip
-    # itself and still report green — exactly the failure this file exists to prevent.
-    #
-    # Only enforced when the module that defines it was actually collected. Checking the
-    # collection instead of the command line means this stays correct under `-k`, a single
-    # file path, `-m`, or any other selection, rather than guessing at argv.
-    if not any(item.path.name == "test_ask.py" for item in items):
-        return
-    if missing := _LIVE_BY_NAME - seen_by_name:
-        raise pytest.UsageError(
-            f"conftest expected to find live test(s) {sorted(missing)} but collection did "
-            "not contain them. If a test was renamed, update _LIVE_BY_NAME in "
-            "tests/conftest.py."
-        )
+    # A rename would move a paying test into the free tier, where it would skip itself and
+    # still report green. That is checked by `tests/test_tiers.py` rather than here: a
+    # collection hook cannot tell "the test was renamed" from "the user selected one test by
+    # node id", and an earlier version of this guard failed the run for the latter.
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:

@@ -395,7 +395,7 @@
       "sections": [
         "Item 7 \u2014 Management's Discussion and Analysis"
       ],
-      "note": "Stated verbatim in the assessment brief. Relevance legitimately spans several filings and periods, which a single-file label describes badly \u2014 flagged in G02.",
+      "note": "Stated verbatim in the assessment brief. Relevance legitimately spans several filings and periods, which a single-file label describes badly.",
       "absent": [],
       "source_files": [
         "NVDA_10K_2025-02-26_full.txt",
@@ -508,7 +508,7 @@
       "sections": [
         "Item 1A \u2014 Risk Factors"
       ],
-      "note": "Stated verbatim in the assessment brief. Names no company, so retrieval must find the sector unaided \u2014 measured at I004 to already work without filters.",
+      "note": "Stated verbatim in the assessment brief. Names no company, so retrieval must find the sector unaided \u2014 measured to already work without filters.",
       "absent": [],
       "source_files": [
         "ABBV_10K_2025-02-14_full.txt",

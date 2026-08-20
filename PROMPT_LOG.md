@@ -1,8 +1,8 @@
 # Prompt log
 
 Every change to the system prompt in `src/prompt.py`, why it changed, and what it did.
-Written as the changes happen — a log reconstructed at the end shows, and SPEC §6 treats
-this as a graded deliverable rather than a byproduct.
+Written as the changes happen — a log reconstructed at the end shows, and the brief asks for
+this history as a deliverable in its own right rather than as a byproduct.
 
 Expect the interesting entries to be failures. "v2 over-cited and became unreadable" says
 more about the work than a list of clean wins.
@@ -11,16 +11,16 @@ more about the work than a list of clean wins.
 
 ## v1 — 2026-08-19 — the two rules everything else depends on
 
-**Version:** v1 · introduced under [I001](.eng/intents/I001-frontend-answers-from-fastapi.md)
+**Version:** v1 · the first end-to-end answer — frontend → FastAPI → one LLM call
 
 **What it says.** Four rules in precedence order: answer only from the provided context;
 every factual claim carries a `[C#]` handle; a company named in the question but absent from
 the context is called out explicitly rather than substituted; never dress a hedge as a
 finding. Closes with a Sources list mapping handles to company, form, period and section.
 
-**Why this and not the full contract.** SPEC §6 specifies a five-part answer — bottom line,
+**Why this and not the full contract.** The answer contract is five parts — bottom line,
 per-entity findings, comparison table, gaps and confidence, sources. v1 deliberately does
-not ask for that structure. I001's scope is the *wire*: one real answer travelling from the
+not ask for that structure. v1's scope was the *wire*: one real answer travelling from the
 corpus through one LLM call to the browser. Prompting for a comparison table while the
 context is a fixed slice of a single filing would produce a table with one column and teach
 us nothing about whether the prompt works. The structure arrives with the retrieval that
@@ -45,10 +45,10 @@ information about Tesla or JPMorgan in the excerpts you provided," answered for 
 closed by repeating that no comparison could be made. No fabricated Tesla or JPMorgan risk
 factors, no invented tickers, every handle resolved. Generation 4,944 ms.
 
-That second result is the behaviour SPEC §6 calls the single most valuable thing to demo, and
+That second result — a graceful refusal — is the single most valuable behaviour to demo, and
 it worked at v1 without refusal-specific tuning. Worth not over-reading: with a single-company
-context, "the others are absent" is the *easy* case. The hard case is a company absent from
-the whole 246-filing corpus while nine plausible neighbours are retrieved — route entry 6.
+context, "the others are absent" is the *easy* case. The hard case is a company absent from the
+whole 246-filing corpus while nine plausible neighbours are retrieved — still ahead of us here.
 
 **Two things to watch, not yet problems.**
 
@@ -57,9 +57,9 @@ the whole 246-filing corpus while nine plausible neighbours are retrieved — ro
   for concision — a refusal that repeats itself is a better failure than one a reader skims
   past. Revisit if answers get long.
 - **Generation dominates latency by three orders of magnitude** — ~5-6 s against ~1 ms of
-  context assembly. G01's signal 4b (end-to-end under 15 s) has real headroom now, but that is
-  with three chunks. At SPEC §5.5's 40k-token budget this is the number that will move, and
-  the context budget is the named lever.
+  context assembly. The 15 s end-to-end target has real headroom now, but that is with three
+  chunks. At the full 40k-token context budget this is the number that will move, and that
+  budget is the named lever.
 
 
 ## v1 — observed again under entity quotas, 2026-08-19 (no prompt change)
@@ -81,7 +81,7 @@ the argument for the refusal hardening still to come: a reader should not have t
 model ignored twenty irrelevant passages.
 
 *"...facing Apple, Tesla, and JPMorgan"* → 6/6/6 passages, 13 handles, all resolving, and the
-answer grouped itself by company without being asked to. v1 still does not request SPEC §6's
+answer grouped itself by company without being asked to. v1 still does not request the
 five-part structure; it is now clear that it should, because the model is inventing a structure
 per answer and consistency is part of what makes a comparison readable. That is a v2 change and
 belongs with the refusal work.
@@ -89,9 +89,9 @@ belongs with the refusal work.
 
 ## v2 — 2026-08-19 — the five-part contract, and it did not take
 
-**Version:** v2 · introduced under [I006](.eng/intents/I006-refusal-and-answer-contract.md)
+**Version:** v2 · the five-part answer contract
 
-**What changed.** Added SPEC §6's five-part answer contract — bottom line, findings, comparison,
+**What changed.** Added the five-part answer contract — bottom line, findings, comparison,
 gaps and confidence, sources — as required markdown headings in the **system prompt**, after the
 grounding rules. Also started passing the absent-company list from `unresolved_mentions` into the
 user message, so rule 3 acts on a fact rather than on the model noticing a gap.
@@ -120,7 +120,7 @@ distance. Nothing was wrong with the wording.
 
 ## v3 — 2026-08-19 — move the format to the end of the user message
 
-**Version:** v3 · same intent
+**Version:** v3 · same change, relocated
 
 **What changed.** The grounding rules stay in the system prompt, which ends with a single line
 pointing at the format. The required skeleton now goes **last in the user message**, after the
@@ -150,7 +150,7 @@ start reading as padded, this is the first thing to reconsider.
 
 ## v4 — 2026-08-19 — a refusal answers nothing else
 
-**Version:** v4 · introduced under [I007](.eng/intents/I007-clean-refusal.md)
+**Version:** v4 · the clean refusal
 
 **What changed.** When the question names companies and **none** of them are in the corpus, the
 five-part skeleton is replaced by a two-section refusal instruction: bottom line, gaps, and an
@@ -189,7 +189,7 @@ face?" — names no company either, and a careless version of this fix would ref
 | Apple/Tesla/JPMorgan | all five | 3 | 28 |
 
 **What it made worse, and what that forced.** A refusal has no Sources section, because it cites
-nothing — which broke an I006 test that required Sources on every answer unconditionally. The test
+nothing — which broke a v2-era test that required Sources on every answer unconditionally. The test
 was amended rather than the behaviour: the honest rule is "cite your sources when you have used
 sources", and demanding the heading on a refusal would mean either an empty section or an
 invitation to fill it. Worth noting as a general shape — a prompt rule written as "always include
@@ -199,6 +199,8 @@ X" acquires an exception the moment a legitimate answer has no X.
 block does (v3's finding). Put before it, it would have read as fixed and behaved as before.
 
 ## v5 — 2026-08-20 — the passage label states a period, not a fiscal year
+
+**Version:** v5 · the period end replaces the fiscal-year label
 
 **What changed.** `_label` — the header on each context passage the model reads — went from
 `Apple Inc (AAPL) | 10-K FY2025 | Item 1A — Risk Factors` to
@@ -225,7 +227,7 @@ authoritative. But two regex attempts over the residue reached only 93/246 and 7
 AAPL, AMZN, GOOG, MSFT, TSLA, META, XOM, UNH, KO and DIS all missed. The arithmetic fallback
 (period-end month versus fiscal-year-end month) is fragile exactly where it matters, because
 52/53-week calendars put JNJ's year end in December *or* early January and Disney's in September
-*or* October. It would also have to run **before** the XBRL strip that ticket 03 is about, which
+*or* October. It would also have to run **before** the pending inline-XBRL strip rework, which
 couples two unrelated changes.
 
 **Observed effect.** Not a prompt-quality change so much as a correctness one — the 29 live tests
@@ -245,3 +247,117 @@ for two years received one, and the answer looked confident about it.
 **Note for whoever writes the next entry.** The label is what the model sees; `sources.tsx` is
 what the reader sees. They were changed together on purpose. If one moves without the other, the
 answer will cite a period the UI does not show.
+
+## v6 — 2026-08-20 — the model is told what it is standing on
+
+**What changed.** A computed coverage sentence is inserted after the context, before the
+format block:
+
+> Evidence available to you: Evidence base — 4 companies, filings used: JNJ 3 of 17, PFE 3 of
+> 15, MRK 1 of 1, LLY 1 of 1. This corpus holds only a single filing for MRK and LLY, so
+> conclusions about them rest on one period.
+
+plus an instruction to reflect it in *Gaps and confidence* and let it temper how broadly
+conclusions are stated.
+
+**Why.** The panel's third question is *"What regulatory risks do the major pharmaceutical
+companies face?"* and this corpus holds **JNJ 17 filings, PFE 15, and ABBV, MRK, LLY, TMO at
+one filing each**. Every passage retrieved for that question is genuinely relevant, so no
+retrieval metric flags anything — the system simply answers on behalf of an industry while
+standing on two companies. The failure is invisible to `recall@k` and obvious to a reader.
+
+The sentence is **computed, not requested**. Asking the model to derive its own coverage would
+make the single most trust-bearing claim in the answer the least verifiable thing in it. The
+same string is rendered beside the answer, so what the reader sees is the computed copy and
+the model's prose only has to be *proportionate*, not accurate about counts.
+
+Counting is in **distinct filings, never passages** — the context held seven Merck passages
+from one filing, and "7" would have overstated that evidence sevenfold in precisely the case
+where it matters.
+
+**Observed effect.** The model now writes its own hedge, unprompted as to wording:
+
+> "Only a single (most recent) filing is available for Merck & Co Inc and Eli Lilly and
+> Company, so conclusions about their regulatory risks are based on limited evidence and may
+> not fully reflect ongoing or prior strategies."
+
+**What it made worse, and what that forced — a second edit in the same version.** Given the
+counts alone, the model wrote:
+
+> "No filings are available for companies except Eli Lilly and Company, Johnson & Johnson,
+> Merck & Co Inc, and Pfizer Inc"
+
+which is **false**. This corpus holds filings for ABBV and TMO; retrieval did not reach them.
+The model had turned a retrieval limit into a claim about the data — worse than saying nothing,
+because it sounds like knowledge of the corpus.
+
+So the note now ends: *"This describes the passages you were given, not the whole corpus.
+Companies not listed may still have filings here that this search did not return — say a
+company is absent from the corpus only if you were told so explicitly above."* Genuine
+absences already arrive through the `absent` mechanism from v4, and only those may be
+described that way. After the edit:
+
+> "Other major pharmaceutical companies not listed in the context (e.g., Novartis, Sanofi,
+> GSK) are not addressed."
+
+True, and carefully scoped to the context rather than the corpus.
+
+**The general shape, worth carrying forward.** Handing the model a *partial* census invites it
+to treat the partial set as complete. Any count given to a model needs to say what it is a
+count *of*, or the model will pick the more useful-sounding interpretation.
+
+## v6 — observed again after table-caption binding, 2026-08-20 (no prompt change)
+
+No prompt edit. Recorded because the *context* the v6 prompt receives changed materially, and
+the log would otherwise imply the prompt was working against the same input it started with.
+
+Table-caption binding (§2.7) carries a table's scale caption — `(In millions)` — and its
+period-header row into any chunk that was cut below them. Measured across five filings,
+financial-table chunks carrying figures with **no stated scale** fell from **113 of 405 (28%)
+to 15 of 405 (4%)**; the residual are share-count tables that need no caption.
+
+**Why this belongs in a prompt log.** The passages are the prompt. Before this, a passage
+reaching the model could read:
+
+    Shares repurchased | (211) |  | (27) |  | (9,719) |  | (9,746) |
+    Net income         | —     |  | —    |  | 72,880  |  | 72,880  |
+
+`72,880` is millions of dollars and `(211)` is millions of shares, and nothing in the passage
+said so. No prompt instruction can recover a unit that is not in the context — the model either
+guesses or omits, and for a diligence answer an order-of-magnitude guess is the worst available
+outcome. This is the clearest case on the map of a retrieval fix doing what no prompt wording
+could.
+
+**Nothing synthesized.** Only the filing's own caption and header lines are carried, from
+earlier in the same section, and the walk stops at prose so a caption in *thousands* can never
+be bolted onto figures in *millions*. A wrong scale reads as authoritative and would be worse
+than the missing one.
+
+## v6 — observed again with cross-encoder reranking, 2026-08-20 (no prompt change)
+
+No prompt edit. Recorded because the **selection** of passages reaching the v6 prompt changed,
+and because reranking is the step most likely to be mistaken for an extra LLM call.
+
+A cross-encoder now scores the overfetched candidate set before the top-k cut —
+`Xenova/ms-marco-MiniLM-L-6-v2`, run locally through FastEmbed's ONNX runtime like the BM25
+leg. **No API call, no key, no per-query cost.** It is retrieval work done before the single
+generation call, exactly as embedding is, so the one-call constraint is untouched: there is
+still one `complete()` call site, and `src/rerank.py` imports no provider SDK.
+
+**What the model now sees.** The same 20 passages' worth of budget, chosen by a model that read
+the question and each passage *together* rather than by fusing two rank lists that never
+compared them. Retrieval latency 1.0s → 1.7s; generation is ~15s, so it is not perceptible.
+
+**The limit worth stating out loud in the walkthrough.** Every reranker FastEmbed exposes
+truncates at **512 tokens**, measured rather than assumed — a marker sentence at token 300
+moves the score, the same sentence at token 600 moves it by exactly 0.0000, for all four
+candidates. Chunks are median 715 tokens, so **26.8% of indexed text does not influence
+ranking**. Two things make that tolerable, and both are consequences of earlier entries:
+reflow means a chunk's first 512 tokens are a real block opening rather than an arbitrary
+window, and the full chunk still reaches the prompt untouched. The reranker orders candidates;
+it does not read them on the model's behalf.
+
+**A trap for whoever revisits this.** `jina-reranker-v1-turbo-en` advertises 8192 context and
+truncates at 512 through this export — do not repeat the 8192 figure. And
+`jina-reranker-v2-base-multilingual` is **CC-BY-NC-4.0**: the strongest option on offer and
+unusable commercially. Both are pinned by tests.

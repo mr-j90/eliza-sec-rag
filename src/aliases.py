@@ -8,7 +8,7 @@ Reading 54 header blocks is cheap (a few hundred bytes per file), so this is der
 corpus at startup rather than hand-maintained. A hand-written list is a list that goes stale
 the first time the corpus changes.
 
-Entity *extraction* — matching these against a question — is the next route entry. This module
+Entity *extraction* — matching these against a question — lives in `query.py`. This module
 only owns the vocabulary.
 """
 

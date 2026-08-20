@@ -75,7 +75,7 @@ TOPICS = {
 
 
 def test_different_questions_retrieve_different_chunks(indexed):
-    """The defining property of retrieval, and the one I001 could not have.
+    """The defining property of retrieval, and the one a fixed context could not have.
 
     Under the fixed context this test was impossible to pass: every question returned the
     same three windows. If it fails now, retrieval is not actually influencing the answer.
@@ -126,7 +126,7 @@ def test_stored_text_is_display_clean(indexed):
 
 
 def test_retrieval_latency_is_measured_and_within_budget(indexed):
-    """G01 signal 4a. The lower bound matters: I001's 0.0 ms was a dict lookup."""
+    """The lower bound matters: the fixed-context version's 0.0 ms was a dict lookup."""
     timings = []
     for question in list(TOPICS.values()) * 3:
         import time
@@ -140,7 +140,7 @@ def test_retrieval_latency_is_measured_and_within_budget(indexed):
     assert p50 < 2000, f"retrieval p50 {p50:.0f} ms exceeds the 2s budget"
 
 
-# --- near-duplicate suppression (I004) ---
+# --- near-duplicate suppression ---
 
 
 def retrieved(text: str, score: float = 1.0) -> Retrieved:
@@ -203,11 +203,11 @@ def test_live_results_contain_no_near_duplicates(indexed):
     )
 
 
-# --- corpus-scale checks (I004) ---
+# --- corpus-scale checks ---
 
 
 def test_the_index_holds_every_filing_and_every_company(indexed):
-    """Signal 2. Deterministic point ids mean a collision overwrites silently, so the count
+    """Deterministic point ids mean a collision overwrites silently, so the count
     is compared against what the chunker produces rather than assumed to match."""
     from src.config import settings as _settings
     from src.index import client, count
@@ -236,7 +236,7 @@ def test_the_index_holds_every_filing_and_every_company(indexed):
 
 
 def test_a_cross_company_question_reaches_more_than_one_company(indexed):
-    """Signal 3, deliberately weak: guaranteeing *every* named company is entity quotas, the
+    """Deliberately weak: guaranteeing *every* named company is entity quotas, the
     next entry. But a comparative question returning a single company means retrieval is
     ignoring two thirds of the question, and that must not pass silently."""
     results = retrieve(
@@ -249,7 +249,7 @@ def test_a_cross_company_question_reaches_more_than_one_company(indexed):
 
 
 def test_report_period_is_used_when_the_filing_carries_it():
-    """Signal 5. Getting the period wrong misdates citations, which is a quiet way to
+    """Getting the period wrong misdates citations, which is a quiet way to
     mislead a reader.
 
     **Amended by ticket 15.** This test used to assert that the 54 filings without a

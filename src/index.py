@@ -39,7 +39,7 @@ def qdrant_reachable() -> bool:
 class WrongInstance(RuntimeError):
     """The Qdrant we reached is holding somebody else's data.
 
-    Guard against the silent failure `.eng/config.md` records: a client pointed at a port
+    Guard against a silent failure: a client pointed at a port
     another project owns connects happily and creates its collection inside a stranger's
     instance. Nothing errors; the data is simply in the wrong place, and you find out much
     later. Refusing to write is the cheap version of finding out now.

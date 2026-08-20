@@ -9,7 +9,9 @@ wrong result first, and the comments say which one:
 
 1. **Metadata lives in a plain-text header block**, terminated by a `====` separator — not in
    `manifest.json` and not in the filing body. `Report Period:` is absent from 54 of the 246
-   filings, so fiscal year falls back to the filing-date year.
+   filings, and the fiscal year must **not** fall back to the filing-date year for them — see
+   `fiscal_period`, where doing so mislabelled 37 filings and skewed every relative temporal
+   question.
 2. **Item headers are not line-anchored.** They run together mid-line, so an `^Item` regex
    finds only the table of contents on much of the corpus.
 3. **Three kinds of impostor look like a section header** and each needs its own rule: TOC
@@ -19,6 +21,10 @@ wrong result first, and the comments say which one:
    matcher does not claim is still chunked under `UNLABELLED`. An earlier version kept only
    the text *between* detected headers, and McDonald's FY2025 10-K — whose only matches were
    in its trailing index — lost 99% of its content while reporting six tidy sections.
+5. **Block boundaries were deleted by the HTML converter and have to be reconstructed.**
+   Measured across eight representative filings, 0 of 55 sections contained a single blank
+   line, and 88.8% of chunks fused two blocks together — 3.6% of them across an `ITEM`
+   header, putting two sections under one label. See `_reflow`.
 """
 
 from __future__ import annotations
@@ -54,7 +60,11 @@ _SEPARATOR = re.compile(r"={20,}")
 # and its risk factors sit under *Part II* Item 1A. Measured 2026-08-19: with only the 10-K map,
 # 91 of the 157 10-Qs detected no sections at all and fell back to unlabelled — and 10-Qs are
 # the majority of this corpus, so temporal questions depended on it.
-_ITEM = r"Item\s+{}\.?[\s\xa0|]*{}"
+# `[.:\-–—]?` after the number, not just `.`: §2.5 lists a colon/dash form and the pattern
+# only ever allowed a period. Measured, that single omission cost **11 filings** their entire
+# segmentation — Comcast writes `Item\xa01A: Risk Factors` and Disney's Part II headers use the
+# same form, so all 10 Disney 10-Qs plus Comcast's 10-K fell back to unlabelled.
+_ITEM = r"Item\s+{}[.:\-–—]?[\s\xa0|]*{}"
 
 _SECTIONS_10K: tuple[tuple[str, str], ...] = (
     (_ITEM.format("1", r"Business"), "Item 1 — Business"),
@@ -198,6 +208,41 @@ _TOC_ROW = re.compile(r"^[^\n]*\|[\s\xa0]*\d+[\s\xa0]*$")
 _QUOTES = "“‘\"'"
 
 
+# How far back to look for an unclosed opening quote. A cross-reference names the item a few
+# words into the quotation — `“Part I, Item 1A—Risk Factors”` — so checking only the character
+# immediately before the match misses it.
+_QUOTE_LOOKBACK = 48
+_OPEN_QUOTES = "“‘"
+_CLOSE_QUOTES = "”’"
+
+
+def _inside_a_quotation(body: str, start: int) -> bool:
+    """Is this match inside a quoted cross-reference rather than at a real header?
+
+    §2.5 measures **30.7% of all `Item N` mentions as cross-references**, so this guard is
+    doing most of the work of keeping segmentation honest.
+
+    Two rules, and the second is why the naive version failed. A quote character immediately
+    before the match catches `“Item 1A. Risk Factors”`. But AMD writes
+    `see “Part I, Item 1A—Risk Factors” and…`, where the quote opens eight characters earlier
+    — and taking that as a header cut Item 1 Business from 19 chunks to 1. So we also walk
+    back for an **unclosed** opening quote, stopping at a closing quote or a line break
+    because either means the quotation ended before this point.
+
+    Only curly quotes are used for the walk. A straight `'` is an apostrophe far more often
+    than a quote in this corpus (`Management's Discussion`), and treating it as one would
+    reject real headers.
+    """
+    if start > 0 and body[start - 1] in _QUOTES:
+        return True
+    for character in reversed(body[max(0, start - _QUOTE_LOOKBACK) : start]):
+        if character in _CLOSE_QUOTES or character == "\n":
+            return False
+        if character in _OPEN_QUOTES:
+            return True
+    return False
+
+
 def _first_body_match(body: str, pattern: str, after: int = 0) -> int | None:
     """Offset of the first real section header at or after `after`.
 
@@ -212,7 +257,7 @@ def _first_body_match(body: str, pattern: str, after: int = 0) -> int | None:
     for match in re.finditer(pattern, body, re.IGNORECASE):
         if match.start() < after:
             continue
-        if match.start() > 0 and body[match.start() - 1] in _QUOTES:
+        if _inside_a_quotation(body, match.start()):
             continue
         line_end = body.find("\n", match.end())
         rest_of_line = body[match.end() : line_end if line_end != -1 else len(body)]
@@ -267,18 +312,227 @@ def _section_spans(
     return spans
 
 
+# --- reflow: putting back the block boundaries the HTML stripper omitted (§2.4) ---------
+#
+# The converter emitted no separator where a block ended. 216 of 246 filings carry a line
+# over 20,000 characters and Tesla's whole Item 1A is one line of 90,033. Measured before
+# this landed: 88.8% of chunks contained an invisible block join and 3.6% fused across an
+# `ITEM` header — two sections of a filing in one chunk, under one label.
+#
+# The omission is the signal. Where a boundary was, one of two things is now true.
+
+# A sentence-final character abutting a capital with no space between them.
+_GLUE_SENTENCE = re.compile(r'(?<=[.!?"])(?=[A-Z"])')
+
+# A Title Case heading running straight into its body text. Deliberately narrow: the
+# unguarded `(?<=[a-z])(?=[A-Z])` this replaces fired 285–335 times per filing and shredded
+# `xAI`, `MyPower` and glued table headers. `[a-z]{3}` requires a real word before the join
+# and `[A-Z][a-z]+\s` a real word after, which is what excludes those.
+_GLUE_HEADING = re.compile(r"(?<=[a-z]{3})(?=[A-Z][a-z]+\s)")
+
+# Abbreviations that end in a period without ending a sentence. Measured on Tesla's 10-K,
+# **98 of 416** rule-1 candidates sit after one of these — without the guard, `U.S.` becomes
+# `…in U.` / `S. dollar would…`, so this is the difference between reflow working and reflow
+# shredding the text.
+_ABBREVIATION_WORD = re.compile(
+    r"\b(?:Inc|Corp|Ltd|Co|No|Nos|Mr|Mrs|Ms|Dr|Jr|Sr|St|vs|etc|al|Ph|Fig"
+    r"|e\.g|i\.e|approx|Dept|Div|Univ|Sec|Art)\.$",
+    re.IGNORECASE,
+)
+
+# A single capital letter used as an initial, which is how the *interior* periods of `I.R.S.`
+# and `U.S.C.` are caught. The preceding character must be a space, an open paren or another
+# period — deliberately **not** a word boundary. `\b` would also match the `K` in
+# `Form 10-K.`, and a form name genuinely does end a sentence: Tesla writes
+# `…on Form 10-K.ITEM 1A. RISK FACTORS…`, which is precisely a boundary we must not miss.
+_ABBREVIATION_INITIAL = re.compile(r"(?:^|[\s(. ])[A-Z]\.$")
+
+
+def _ends_with_abbreviation(before: str) -> bool:
+    return bool(_ABBREVIATION_WORD.search(before) or _ABBREVIATION_INITIAL.search(before))
+
+# How far back the heading rule looks for evidence of a Title Case run.
+_HEADING_LOOKBACK = 70
+
+
+def _block_boundaries(text: str) -> list[int]:
+    """Offsets where a block boundary was lost, in ascending order."""
+    found: set[int] = set()
+
+    for match in _GLUE_SENTENCE.finditer(text):
+        # 12 characters is enough for the longest abbreviation above plus its period.
+        if _ends_with_abbreviation(text[max(0, match.start() - 12) : match.start()]):
+            continue
+        found.add(match.start())
+
+    for match in _GLUE_HEADING.finditer(text):
+        cut = match.start()
+        before = text[max(0, cut - _HEADING_LOOKBACK) : cut]
+        # A pipe means a table row, whose glued column headers belong to ticket 06 — cutting
+        # them here would separate a figure from the header naming it. A recent newline means
+        # the "heading" is just the start of a line, which needs no boundary inserted.
+        if "|" in before or "\n" in before[-25:]:
+            continue
+        words = before.split()[-4:]
+        if len(words) < 3 or sum(word[:1].isupper() for word in words) < 3:
+            continue
+        found.add(cut)
+
+    return sorted(found)
+
+
+def _reflow(text: str) -> str:
+    """Insert `\\n\\n` at every recovered block boundary.
+
+    Inserting separators rather than returning pieces is what lets the paragraph arm of
+    `_split_on_boundaries` do the work it was always meant to do — §2.4's point is that the
+    preference order was right and the separators were simply missing.
+
+    **This only ever inserts.** It must not alter a single character of filing text; a reflow
+    that dropped content would be silent and invisible to every retrieval metric, which is
+    why `test_reflow.py` asserts the text is unchanged with newlines removed.
+    """
+    boundaries = _block_boundaries(text)
+    if not boundaries:
+        return text
+    pieces = []
+    previous = 0
+    for cut in boundaries:
+        pieces.append(text[previous:cut])
+        previous = cut
+    pieces.append(text[previous:])
+    return "\n\n".join(pieces)
+
+
 def _split_on_boundaries(text: str) -> list[str]:
-    """Paragraph first, then sentence — SPEC §4's preference order."""
+    """Paragraph first, then sentence — SPEC §4's preference order.
+
+    Reflow runs first, because on this corpus the paragraph separators the preference order
+    assumes do not exist: measured across eight representative filings, **0 of 55 sections**
+    contained a single `\\n\\n`. Without it the paragraph arm never fires and everything
+    falls to the sentence arm, which cannot see a boundary that has no whitespace at all.
+
+    Reflow is applied by `_windows`, which keeps the reflowed text so table-caption binding
+    can locate a window inside it. Splitting here without reflowing first would find no
+    paragraph boundaries at all.
+
+    Reflow runs per section, after `_section_spans` has run — deliberately.
+    Inserting newlines earlier would change the line structure that `_TOC_ROW` and the
+    late-detection guard depend on, so section segmentation stays byte-identical and only
+    chunking changes. Whether reflowing *before* segmentation would improve detection is a
+    real question and belongs to ticket 02, which measures it.
+    """
     paragraphs = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
     if len(paragraphs) > 1:
         return paragraphs
-    # Filing text is often one run-together block, so fall through to sentences.
+    # Still possible for a short section with no recoverable boundary at all.
     return [s for s in re.split(r"(?<=[.!?])\s+(?=[A-Z“\"])", text) if s.strip()]
+
+
+# --- table-caption binding (§2.7) --------------------------------------------------------
+#
+# 22.2% of corpus characters are pipe-table rows, and two of the three things a figure needs
+# sit outside the table: the **scale caption** on the preceding narrative line, and the
+# **period header** on its own label-less row. Cut a long table below those and every figure
+# under the cut is meaningless — measured, 113 of 405 (28%) financial-table chunks carried
+# figures with no stated scale.
+#
+# Demo-critical because the XBRL numeric router is future state: with no structured path,
+# NVIDIA's revenue figures come from exactly these rows.
+
+_SCALE_CAPTION = re.compile(
+    r"(?:\(|\b)(?:\$\s*)?(?:in|dollars\s+in|amounts\s+in)\s+(?:millions|thousands|billions)\b",
+    re.IGNORECASE,
+)
+
+# A figure with a thousands separator, currency mark or decimal — the kind of number whose
+# scale changes its meaning. A bare `13` is a page number, not a financial figure.
+_SCALED_FIGURE = re.compile(r"\|\s*\$?\s*\(?(?:\d{1,3}(?:,\d{3})+|\$\s*[\d.]+|\d+\.\d\d)\b")
+
+# Period labels a column header is built from.
+_PERIOD_LABEL = re.compile(
+    r"\b(?:19|20)\d\d\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\b"
+    r"|\b(?:Three|Six|Nine|Twelve)\s+Months\b|\bQ[1-4]\b|\bYear(?:s)?\s+Ended\b",
+    re.IGNORECASE,
+)
+
+
+# A caption sits on the line immediately before its table (§2.7), so a couple of prose lines
+# between a window and a candidate caption is normal — a run of them means we have left the
+# table entirely.
+_MAX_NARRATIVE_LINES_ABOVE_TABLE = 2
+
+
+def _scale_caption(line: str) -> bool:
+    """Does this line state the scale its neighbouring figures are reported in?"""
+    return bool(_SCALE_CAPTION.search(line))
+
+
+def _is_period_header(line: str) -> bool:
+    """A table's column header: period labels and **no figures of its own**.
+
+    The absence of figures is the discriminator. `Total | 130,497 | 60,922` names no period
+    and carries data; `| Jan 26, 2025 | Jan 28, 2024 |` names periods and carries none.
+    """
+    if line.count("|") < 2:
+        return False
+    if _SCALED_FIGURE.search(line):
+        return False
+    return bool(_PERIOD_LABEL.search(line))
+
+
+def _bind_table_context(window: str, section: str) -> str:
+    """Carry a table's scale caption and period header into a window that lost them.
+
+    Only ever prepends **the filing's own lines**, taken from earlier in the same section.
+    `index.py` stores this text as what citations display, so an excerpt must be the filing's
+    words — this is a composition of two real spans, never a synthesized header.
+
+    The *nearest preceding* caption is used, not the first or last in the section: a section
+    holding one table in thousands and another in millions would otherwise have them swapped,
+    which is worse than no caption at all.
+    """
+    lines = window.split("\n")
+    if not any(_SCALED_FIGURE.search(line) for line in lines):
+        return window
+    if any(_scale_caption(line) for line in lines):
+        return window
+
+    start = section.find(window)
+    if start <= 0:
+        return window
+
+    caption = header = None
+    narrative_run = 0
+    for line in reversed(section[:start].split("\n")):
+        if header is None and _is_period_header(line):
+            header = line
+        if _scale_caption(line):
+            caption = line
+            break
+        # Stop at prose. A caption belongs to the table it introduces, and crossing a run of
+        # narrative means we have walked out of that table and into whatever came before it —
+        # where a caption in *thousands* could get bolted onto figures in *millions*. A wrong
+        # scale is worse than a missing one, because it reads as authoritative.
+        if line.strip() and "|" not in line:
+            narrative_run += 1
+            if narrative_run > _MAX_NARRATIVE_LINES_ABOVE_TABLE:
+                return window
+        elif line.strip():
+            narrative_run = 0
+    if caption is None:
+        return window
+
+    carried = [caption] + ([header] if header else [])
+    return "\n".join(carried + lines)
 
 
 def _windows(text: str) -> list[str]:
     """Accumulate boundary-preferring pieces up to the token target, with overlap."""
-    pieces = _split_on_boundaries(text)
+    # Reflowed once and held, because `_bind_table_context` locates a window by searching
+    # this text — a window from the pre-reflow string would not be found in it.
+    reflowed = _reflow(text)
+    pieces = _split_on_boundaries(reflowed)
     overlap_tokens = int(TARGET_TOKENS * OVERLAP_RATIO)
 
     out: list[str] = []
@@ -315,7 +569,9 @@ def _windows(text: str) -> list[str]:
     if current:
         out.append(" ".join(current))
     stripped = (w.strip() for w in out)
-    return [w for w in stripped if w and count_tokens(w) >= MIN_TOKENS]
+    kept = [w for w in stripped if w and count_tokens(w) >= MIN_TOKENS]
+    # §2.7: a window cut below a table's caption gets it back, from the filing's own lines.
+    return [_bind_table_context(window, reflowed) for window in kept]
 
 
 def _hard_split(text: str) -> list[str]:

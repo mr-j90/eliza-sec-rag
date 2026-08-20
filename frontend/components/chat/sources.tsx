@@ -63,6 +63,35 @@ function Provenance({ citation }: { citation: Citation }) {
   );
 }
 
+/**
+ * What the answer stood on — the backend's computed sentence, rendered verbatim.
+ *
+ * Verbatim is the point. The same string is given to the model so its prose can hedge in
+ * proportion to the evidence, but a coverage claim the model paraphrased would be a claim
+ * nobody checked. This copy is authoritative.
+ *
+ * It goes amber when the corpus holds a single filing for some company, because that is the
+ * case a reader most needs to notice: the panel's pharmaceutical question resolves to two
+ * companies with real coverage and four with one filing each, and an answer that reads as an
+ * industry survey is standing on far less than it appears to.
+ */
+function CoverageNote({ coverage }: { coverage?: RetrievalMeta["coverage"] }) {
+  const sentence = coverage?.sentence;
+  if (!sentence) return null;
+
+  const thin = (coverage?.thin?.length ?? 0) > 0 || (coverage?.named_but_absent?.length ?? 0) > 0;
+
+  return (
+    <p
+      className={`mt-1.5 text-xs ${
+        thin ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"
+      }`}
+    >
+      {sentence}
+    </p>
+  );
+}
+
 function Facts({ meta, used, total }: { meta?: RetrievalMeta; used: number; total: number }) {
   const facts: string[] = [`${used} of ${total} passages cited`];
   const latency = meta?.latency_ms;
@@ -123,6 +152,8 @@ export function Sources({
           Not in this corpus: {meta.unresolved_mentions.join(", ")}
         </p>
       ) : null}
+
+      <CoverageNote coverage={meta?.coverage} />
 
       <ul className="mt-2 space-y-2">
         {headline.map((citation) => (

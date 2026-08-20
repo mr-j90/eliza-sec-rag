@@ -47,6 +47,32 @@ export type RetrievalMeta = {
   fiscal_years?: number[] | null;
   form_type?: string | null;
   n_chunks?: number;
+  /**
+   * What the answer stood on, computed by the backend — never by the model.
+   *
+   * The counts are **distinct filings**, not passages: five Merck passages from one filing
+   * is one filing of evidence, and reporting the passage count would overstate it five-fold
+   * in exactly the case where honesty matters. `filings_retrieved of filings_in_corpus`
+   * separates a thin corpus (`1 of 1`) from a retrieval budget choice (`4 of 17`).
+   *
+   * `sentence` is the authoritative rendering. The same string is given to the model, so its
+   * prose can hedge in proportion — but the model's paraphrase is not the claim; this is.
+   */
+  coverage?: {
+    companies?: {
+      ticker: string;
+      company: string;
+      passages: number;
+      filings_retrieved: number;
+      filings_in_corpus: number;
+      periods?: string[];
+    }[];
+    /** Tickers for which this corpus holds a single filing. */
+    thin?: string[];
+    /** The question named these, filings exist, retrieval reached none of them. */
+    named_but_absent?: string[];
+    sentence?: string;
+  };
   generation_model?: string;
   prompt_version?: string;
   retrieval?: string;

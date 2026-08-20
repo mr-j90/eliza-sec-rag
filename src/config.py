@@ -24,9 +24,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # override=False: a real environment variable beats the file, every time.
 load_dotenv(REPO_ROOT / ".env", override=False)
 
-# SPEC §2 fixes generation at gpt-4.1 (fallback gpt-4o). Under D001 the backend
-# owns generation, so this is the single source of truth for which model answers
-# — the frontend no longer names one.
+# The backend owns generation, so this is the single source of truth for which model
+# answers and the frontend names none. That split is what makes the one-call constraint
+# checkable by grep rather than by trust: no provider SDK is imported browser-side at all.
 DEFAULT_GENERATION_MODEL = "gpt-4.1"
 
 # SPEC §2: dense embeddings are text-embedding-3-small, 1536d, cosine.
@@ -36,14 +36,21 @@ DENSE_DIM = 1536
 # SPEC §2: BM25 sparse vectors via FastEmbed, in the *same* collection as dense.
 SPARSE_MODEL = "Qdrant/bm25"
 
+# Cross-encoder reranker, run locally through FastEmbed like the BM25 leg — no API, no key.
+# apache-2.0, 0.08 GB, and the fastest of the four candidates at 328 ms for 20 passages.
+# Every FastEmbed reranker truncates at 512 tokens (measured, see src/rerank.py), so this was
+# chosen on latency and licence rather than on window. `jina-reranker-v2-base-multilingual` is
+# CC-BY-NC-4.0 and therefore unusable commercially.
+RERANK_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
+
 COLLECTION = "filings"
 
 # The host port our own compose service binds. Deliberately not 6333: another project on
 # this machine has run a Qdrant there, and colliding fails silently — a client connects
-# happily and creates its collection inside a stranger's instance. See `.eng/config.md`.
+# happily and creates its collection inside a stranger's instance.
 DEFAULT_QDRANT_URL = "http://127.0.0.1:6533"
 
-# I002 indexes one filing; entry 4 indexes all 246.
+# A default index run covers this one filing; `--all` covers all 246.
 SEED_FILING = "AAPL_10K_2025-10-31_full.txt"
 
 

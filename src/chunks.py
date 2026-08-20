@@ -1,6 +1,6 @@
 """The unit of context, and the contextual prefix that makes it findable.
 
-`Chunk` moved here from the I001 placeholder it was born in: the shape is reusable and
+`Chunk` moved here from the placeholder module it was born in: the shape is reusable and
 outlived the fixed-window loader that produced the first ones.
 """
 
