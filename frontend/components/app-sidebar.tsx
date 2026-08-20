@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { MessageSquare, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { BarChart3, MessageSquare, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 
 import {
   deleteConversationAction,
@@ -101,6 +101,20 @@ export function AppSidebar({ groups }: { groups: ConversationGroup[] }) {
             <Link href="/chat" onClick={closeOnMobile}>
               <Plus className="size-4" />
               New chat
+            </Link>
+          </Button>
+
+          {/* Retrieval evaluation runs. Sits next to the chat because the numbers behind an
+              answer belong beside the answers, not in a terminal — a diligence tool should be
+              able to show its own scores. */}
+          <Button
+            asChild
+            variant={pathname === "/evals" ? "secondary" : "ghost"}
+            className="w-full justify-start gap-2"
+          >
+            <Link href="/evals" onClick={closeOnMobile}>
+              <BarChart3 className="size-4" />
+              Evals
             </Link>
           </Button>
         </SidebarHeader>

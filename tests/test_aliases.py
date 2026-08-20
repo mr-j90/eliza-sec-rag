@@ -41,15 +41,50 @@ def test_a_company_absent_from_the_corpus_resolves_to_nothing():
     assert resolve("Nonexistent Holdings Ltd") is None
 
 
-def test_an_ambiguous_leading_word_is_not_guessed():
-    """"General" alone must not resolve, even though General Electric is in the corpus.
+def test_a_descriptor_word_never_resolves_on_its_own():
+    """A word that describes a company rather than identifying it must not resolve alone.
 
-    Leading-word aliases only exist where they identify exactly one company; guessing between
-    issuers would retrieve the wrong company's filings while looking confident.
+    Measured 2026-08-20: promoting the leading word unconditionally had put four wrong-issuer
+    resolutions in front of a reader — "General Motors" → GE, "United States" → UPS, "American
+    companies" → AXP, "bank regulations" → BAC. Each retrieved a real company's filings for a
+    question that was not about it, and said nothing about having done so.
     """
+    for word in ("General", "United", "American", "Bank", "Home", "International",
+                 "Advanced", "Business", "Electric", "Systems", "Express", "Services"):
+        assert resolve(word) is None, f"{word!r} identifies no company and must not resolve"
+
+    # The names those words belong to are unaffected: a descriptor still resolves in context.
     assert resolve("General Electric") == "GE"
-    # The bare word is not a company. If GM were ever added, "general" must stay ambiguous.
-    assert resolve("General") in (None, "GE")
+    assert resolve("United Parcel Service") == "UPS"
+    assert resolve("American Express") == "AXP"
+    assert resolve("Bank of America") == "BAC"
+
+
+def test_a_distinctive_word_resolves_from_anywhere_in_the_name():
+    """Not only the leading one. "The Walt Disney Company" yielded `walt disney` and `walt`
+    but not **disney** — the commonest way to name a company with 17 filings here, and the
+    phrasing of the golden set's own temporal question, which therefore ran unfiltered.
+    """
+    assert resolve("Disney") == "DIS"
+    assert resolve("Lilly") == "LLY"
+    assert resolve("Chase") == "JPM"
+    assert resolve("Sachs") == "GS"
+    assert resolve("Hathaway") == "BRK"
+    assert resolve("Mobil") == "XOM"
+
+
+def test_names_no_rule_could_derive_from_the_filing_header():
+    """A former name, a contraction, or a brand that is not the registrant. None of these
+    appear in any `Company:` line, so they are listed explicitly — and the list is filtered
+    against the corpus, so it cannot claim a company this index does not hold.
+    """
+    assert resolve("Coke") == "KO"
+    assert resolve("Amex") == "AXP"
+    assert resolve("P&G") == "PG"
+    assert resolve("J&J") == "JNJ"
+    assert resolve("Raytheon") == "RTX"
+    assert resolve("Google") == "GOOG"
+    assert resolve("Facebook") == "META"
 
 
 def test_tickers_always_win_over_name_collisions():

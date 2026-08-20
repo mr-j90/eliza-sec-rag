@@ -1,7 +1,7 @@
 # All seven deliverables exist, and a stranger can start the system cold
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: 03, 04, 05, 06, 07, 08, 09, 10, 11, 14
 
 ## Question
@@ -108,3 +108,99 @@ the constraint the whole assessment turns on.
 
 Hand the README to someone who has not seen the repo — or start from a fresh clone yourself —
 and get an answer to one of the three demo questions without consulting anything else.
+
+---
+
+## Answer
+
+**Resolved 2026-08-20. All seven deliverables exist, and the documented commands work on this
+machine as well as on a fresh clone.**
+
+### The seven, each with an address
+
+| # | Deliverable | Where |
+|---|---|---|
+| 1 | README with setup and run instructions | **`README.md`** — written here |
+| 2 | Indexing and retrieval code | `src/` — 15 modules |
+| 3 | Log of prompt iterations | `PROMPT_LOG.md` — **434 lines, v1→v7** |
+| 4 | Final prompt template | `docs/PROMPT_TEMPLATE.md` — generated, drift-tested |
+| 5 | Front-end | `frontend/` |
+| 6 | Example request ready to execute | **`example-request.sh`** — written here |
+| 7 | Notes on how quality was evaluated | `docs/EVALUATION.md` |
+
+Verified mechanically, not by eye: **every `make` target the README names exists**, **every
+relative link in `README.md` resolves**, and the test counts it quotes match what pytest
+collects (201 free / 31 live / 34 frontend).
+
+### Both of ticket 01's cold-start blockers are gone
+
+**`bun dev` works.** Ticket 01 found it failing with `Cannot find module
+'../server/require-hook'` on Node 25.8.0 and recommended pinning Node to 24. Re-tested: it
+starts Next.js on :3000 cleanly. The cause was a stale `node_modules`, cleared by the
+`bun install` run during that same ticket — not a Node 25 incompatibility. The README still
+carries the symptom and the fix, because it will bite again on a fresh clone with a partial
+install.
+
+**The Qdrant volume is ours now.** The index lived in `rag_qdrant_storage`, owned by compose
+project `rag` whose working directory no longer exists — so `docker compose up` from this repo
+would have created a *different*, empty volume and collided on both `container_name` and port
+6533. That is a live demo-day footgun: `make up` would have failed for the operator.
+
+Rather than document around it, the compose file was made self-consistent (`sec-rag-qdrant`,
+project `sec-rag`, volume `sec-rag_qdrant_storage`) and **the volume was migrated** — a
+container-to-container copy of 972.8 MB, **no re-embedding**, source volume left intact as a
+backup. Verified after: **30,383 points, status green**, served by `sec-rag-qdrant` started via
+`make up` from this repo. The documented path is now the path that actually runs here.
+
+### The example request earns its place
+
+`./example-request.sh` is one HTTP call, and it prints every mechanism this map built in one
+view:
+
+```
+Evidence base — 1 company, filings used: NVDA 8 of 16.
+citations : 11 of 20 passages cited  |  verified: True
+retrieval : hybrid dense+sparse, server-side RRF + cross-encoder rerank (…MiniLM-L-6-v2)
+model     : gpt-4.1   prompt v7
+latency   : {'retrieval': 2558.1, 'generation': 12561.2, 'total': 15119.2}
+```
+
+It checks `/health` first and, when the backend is down, names the command to start it rather
+than failing with a curl error. It takes an optional question argument, so the panel's other
+two can be run without editing anything.
+
+Writing it needed one fix worth recording: the formatter was a heredoc inside a pipeline, so
+`python3 -` had its stdin claimed twice — the program and the piped JSON competing for the same
+descriptor. Response captured to a variable instead.
+
+### `frontend/README.md` rewritten
+
+It still described the **pre-RAG generic chat app**: "one fixed model, called through the OpenAI
+SDK", a mock-stream fallback, `gpt-5.6`, `OPENAI_API_KEY`. None of that had been true for some
+time — `provider.ts` imports no SDK, there is no streaming, and the mock was deliberately
+removed. A README contradicting its own code undercuts precisely the one-call claim the
+assessment turns on.
+
+### One item I could not create
+
+**`.env.example` is blocked** by a permission deny rule covering env files — sensible, and I did
+not work around it. `README.md`'s quickstart therefore writes the two required files inline with
+`printf` instead of copying an example, and the full variable list is a table further down. If
+you want a committed `.env.example`, it needs creating by hand; the content is that table.
+
+### Also done here
+
+- **Makefile help counts refreshed** — they claimed 169 python / 28 live, now 201 / 31, and
+  `make index` no longer says "not needed" now that a fresh volume genuinely requires it.
+- **`docker-compose.yml` carries a cold-start note**: `make up` alone gives an empty collection,
+  and `/ask` returns 503 saying so rather than an empty answer.
+- **README documents the known limitations** — the 15 unsegmented filings, the reranker's 512
+  window, n=22, table-derived numerics, no sector taxonomy, and the fixed snapshot. Stated
+  rather than left to be discovered in review.
+
+### Verification
+
+- **201 free python + 34 frontend green**, `make check` clean, live tier re-run against the
+  migrated volume.
+- The panel's comparative and temporal questions both answered end to end through
+  `example-request.sh` after the migration.

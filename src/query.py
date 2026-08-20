@@ -16,20 +16,23 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 
-from src.aliases import aliases, by_ticker, normalise
+from src.aliases import DESCRIPTORS, aliases, by_ticker, normalise
 from src.config import settings
 from src.ingest import fiscal_period, parse_header
 
 
 @lru_cache(maxsize=1)
-def _latest_fiscal_year() -> int:
-    """The newest fiscal year in the corpus, read from filing headers.
+def fiscal_year_range() -> tuple[int, int]:
+    """`(earliest, newest)` fiscal year in the corpus, read from filing headers.
 
-    Relative time expressions anchor to **this**, not to `date.today()`. The corpus is a
+    Relative time expressions anchor to the **newest** of these, not to `date.today()`. The corpus is a
     fixed snapshot (SPEC §9 lists that as an honest limitation), so "the last two years"
     means the last two years of available filings. Anchored to the clock, this question
     would quietly return nothing the year after the snapshot stops being current — the
     worst kind of failure, because the answer would still look confident.
+
+    The earliest is returned alongside it so an answer can say what the corpus actually
+    covers when a question asks for a period outside it — one scan, one derivation.
 
     The derivation is `ingest.fiscal_period`, deliberately shared rather than reimplemented.
     This function used to read `Report Period or Filing Date` itself — its own copy of the
@@ -47,10 +50,12 @@ def _latest_fiscal_year() -> int:
         fields, _ = parse_header(head)
         if fields:
             years.append(fiscal_period(fields)[1])
-    return max(years) if years else 0
+    return (min(years), max(years)) if years else (0, 0)
 
 
-LATEST_FISCAL_YEAR = _latest_fiscal_year()
+LATEST_FISCAL_YEAR = fiscal_year_range()[1]
+"""The year relative expressions anchor to. Both ends come from one derivation, for the reason
+the docstring above gives: the bug it describes was two functions computing the same number."""
 
 
 @dataclass(frozen=True)
@@ -97,11 +102,26 @@ _NOT_COMPANIES = {
 }
 
 # Sequences of capitalised words, so "General Electric" is considered before "General".
-_CAPITALISED = re.compile(r"\b([A-Z][a-zA-Z0-9&.\-]*(?:\s+[A-Z][a-zA-Z0-9&.\-]*)*)\b")
+#
+# A run may cross the lowercase connectives that sit inside legal names — "Bank of America",
+# "Procter and Gamble". Without that, `Bank of America` was never tested as a span at all: the
+# runs were "Bank" and "America" separately, and the only reason it ever resolved was the
+# leading-word rule mapping bare "bank" → BAC, which resolved "bank regulations" the same way.
+# Fixing the alias table without this would have taken a company with 4 filings here down to
+# ticker-only.
+_WORD = r"[A-Z][a-zA-Z0-9&.\-]*"
+_CAPITALISED = re.compile(
+    rf"\b({_WORD}(?:\s+(?:of|and|the|de|&)\s+{_WORD}|\s+{_WORD})*)\b"
+)
 
 # Short tickers collide with ordinary words, so they only resolve as a standalone uppercase
 # token: `V` is Visa and `T` is AT&T, but a question about a T-bill is not about AT&T.
 _SHORT_TICKER_CHARS = 2
+
+# A run may *contain* these (see `_CAPITALISED`), but once a span has failed to resolve they
+# are what it should be split on: "Spotify and Rivian" is two absent companies to name, not one
+# phrase. Shorter connectives are already caught by the `_SHORT_TICKER_CHARS` branch below.
+_CONNECTIVES = {"and", "the"}
 
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
 _LAST_N_YEARS = re.compile(
@@ -169,7 +189,11 @@ def _companies_in(question: str) -> tuple[list[str], list[str]]:
                 continue
 
             word = tokens[index]
-            if normalise(word) in _NOT_COMPANIES or len(word) <= _SHORT_TICKER_CHARS:
+            if (
+                normalise(word) in _NOT_COMPANIES
+                or word.lower() in _CONNECTIVES
+                or len(word) <= _SHORT_TICKER_CHARS
+            ):
                 # Ordinary filing or question vocabulary breaks the run.
                 if pending:
                     _record_unresolved(pending, unresolved)
@@ -186,7 +210,16 @@ def _companies_in(question: str) -> tuple[list[str], list[str]]:
 
 def _record_unresolved(words: list[str], into: list[str]) -> None:
     """A capitalised name we do not hold — recorded so an answer can name what it cannot
-    speak about. Heuristic on purpose, and never used to suppress an answer."""
+    speak about. Heuristic on purpose, and never used to suppress an answer.
+
+    A **single** word that `aliases` refuses to promote to an alias is dropped: "Bank",
+    "Technologies", "International" identify no company, and reporting one as absent puts a
+    line in the answer saying this corpus holds no filings for "Technologies". Only when it
+    stands alone — "General Motors" is two words and must still be named, because naming what
+    it cannot speak about is the whole point of this list.
+    """
+    if len(words) == 1 and normalise(words[0]) in DESCRIPTORS:
+        return
     phrase = " ".join(words)
     if phrase and phrase not in into:
         into.append(phrase)

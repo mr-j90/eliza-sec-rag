@@ -1,4 +1,8 @@
-# Qdrant for the filings index — SPEC §2.
+# Qdrant for the filings index.
+#
+# NOTE for anyone starting fresh: this creates an EMPTY collection. Build the index with
+# `make index` (~15 min, ~$0.40 of embedding calls) before asking a question. `make answers`
+# will otherwise return 503 with a message saying exactly that, rather than an empty answer.
 #
 # The host port is deliberately NOT 6333. Another project on this machine runs its
 # own Qdrant there, and the failure mode of colliding is silent rather than loud:
@@ -8,7 +12,7 @@
 services:
   qdrant:
     image: qdrant/qdrant:v1.19.0
-    container_name: rag-qdrant
+    container_name: sec-rag-qdrant
     ports:
       - "6533:6333" # REST
       - "6534:6334" # gRPC

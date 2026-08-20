@@ -64,6 +64,29 @@ function Provenance({ citation }: { citation: Citation }) {
 }
 
 /**
+ * Shown only when the backend found a handle that resolves to nothing.
+ *
+ * Surfaced rather than silently corrected: the whole value of this system is that a claim can
+ * be traced to a filing, so a citation that cannot be is the most important thing on screen.
+ * An answer with a bad handle stripped out would look exactly like one that passed.
+ */
+function FabricatedCitationWarning({
+  check,
+}: {
+  check?: RetrievalMeta["citation_check"];
+}) {
+  const fabricated = check?.fabricated ?? [];
+  if (!fabricated.length) return null;
+  return (
+    <p className="mt-1.5 text-xs font-medium text-red-600 dark:text-red-500">
+      {fabricated.length === 1 ? "Citation" : "Citations"} {fabricated.join(", ")} in the answer
+      {fabricated.length === 1 ? " does" : " do"} not correspond to any retrieved passage and
+      cannot be verified.
+    </p>
+  );
+}
+
+/**
  * What the answer stood on — the backend's computed sentence, rendered verbatim.
  *
  * Verbatim is the point. The same string is given to the model so its prose can hedge in
@@ -93,7 +116,15 @@ function CoverageNote({ coverage }: { coverage?: RetrievalMeta["coverage"] }) {
 }
 
 function Facts({ meta, used, total }: { meta?: RetrievalMeta; used: number; total: number }) {
-  const facts: string[] = [`${used} of ${total} passages cited`];
+  // Prefer the backend's verified count over the client-side parse. Both read the same
+  // answer, but only one of them checked the handles against what was actually retrieved —
+  // and two independent counts of the same thing is how they drift.
+  const verifiedCount = meta?.citation_check?.n_cited;
+  const facts: string[] = [
+    verifiedCount === undefined
+      ? `${used} of ${total} passages cited`
+      : `${verifiedCount} of ${meta?.citation_check?.n_available ?? total} passages cited (verified)`,
+  ];
   const latency = meta?.latency_ms;
 
   // What the question was understood to ask for. Shown because a reader checking whether the
@@ -154,6 +185,7 @@ export function Sources({
       ) : null}
 
       <CoverageNote coverage={meta?.coverage} />
+      <FabricatedCitationWarning check={meta?.citation_check} />
 
       <ul className="mt-2 space-y-2">
         {headline.map((citation) => (

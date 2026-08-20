@@ -12,7 +12,7 @@ which is where it will matter across 246 filings.
 
 from fastapi.testclient import TestClient
 
-from src.api import app, get_llm, get_retriever
+from src.api import app, get_index_size, get_llm, get_retriever
 from src.chunks import Chunk
 from src.config import settings
 from src.retrieve import Retrieved
@@ -67,9 +67,13 @@ def fake_retriever(question: str, k: int = 20) -> list[Retrieved]:
     ]
 
 
-def ask(llm: CountingLLM, question: str, retriever=fake_retriever):
+def ask(llm: CountingLLM, question: str, retriever=fake_retriever, index_size: int = 29_499):
+    """`index_size` is substituted too, because an empty result means opposite things with an
+    empty index and a populated one — see the two tests below. The default stands in for a
+    built index so these tests never depend on a live Qdrant."""
     app.dependency_overrides[get_llm] = lambda: llm
     app.dependency_overrides[get_retriever] = lambda: retriever
+    app.dependency_overrides[get_index_size] = lambda: index_size
     try:
         return TestClient(app).post("/ask", json={"question": question})
     finally:
@@ -123,11 +127,48 @@ def test_a_blank_question_is_rejected_before_it_costs_a_call():
 def test_an_empty_index_says_so_rather_than_answering_from_nothing():
     llm = CountingLLM("should never be produced")
 
-    response = ask(llm, "What are Apple's risk factors?", retriever=lambda q, k=20: [])
+    response = ask(
+        llm, "What are Apple's risk factors?", retriever=lambda q, k=20: [], index_size=0
+    )
 
     assert response.status_code == 503
     assert "index" in response.json()["detail"].lower()
     assert llm.calls == []
+
+
+def test_a_period_the_corpus_lacks_refuses_readably_instead_of_blaming_the_index():
+    """Nothing retrieved *from a populated index* is a scope failure, not an outage.
+
+    `What did Apple disclose about the iPhone in 2010?` returned
+    `503 The index may be empty` against an index holding 30,383 chunks: the year filter had
+    excluded everything, and the message sent the reader after a problem they did not have.
+    `query.py` honours an out-of-range year on purpose rather than widening it, so this is the
+    readable end of that decision.
+    """
+    llm = CountingLLM("should never be produced")
+
+    response = ask(
+        llm, "What did Apple disclose about the iPhone in 2010?", retriever=lambda q, k=20: []
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert llm.calls == [], "zero passages is nothing to ground an answer in — do not spend the call"
+    assert body["citations"] == []
+
+    answer = body["answer"]
+    assert "2010" in answer, "the reader must be told which scope emptied the result"
+    assert "AAPL" in answer
+
+    meta = body["retrieval_meta"]
+    assert meta["n_chunks"] == 0
+    assert meta["fiscal_years"] == [2010, 2010]
+    assert meta["no_matches"] is True
+    # Nothing generated this answer, so it must not be labelled with a model that never ran.
+    assert "generation_model" not in meta
+    # A refusal cites nothing, and that is a pass rather than a failure of the check.
+    assert meta["citation_check"]["verified"] is True
+    assert meta["citation_check"]["n_cited"] == 0
 
 
 def test_an_unconfigured_provider_fails_loudly_rather_than_answering(monkeypatch):

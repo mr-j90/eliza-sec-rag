@@ -11,6 +11,7 @@ import pytest
 from qdrant_client import models
 
 from src.chunks import Chunk
+from src.config import settings
 from src.index import ensure_indexed
 from src.retrieve import (
     Retrieved,
@@ -38,9 +39,43 @@ def test_fusion_is_server_side_rrf_over_dense_and_sparse():
     assert {p.using for p in prefetch} == {"dense", "sparse"}
 
     fusion = query["query"]
-    assert isinstance(fusion, models.FusionQuery)
-    assert fusion.fusion == models.Fusion.RRF
+    # `RrfQuery`, not `FusionQuery` — the latter takes no ranking constant and Qdrant defaults
+    # it to 2, so the value would exist only as a server default. Prior art ran that default
+    # while its prose claimed k=60; the constant is now stated where it can be reviewed.
+    assert isinstance(fusion, models.RrfQuery)
+    assert fusion.rrf.k == settings().rrf_k
     assert query["limit"] == 20
+
+
+def test_the_ranking_constant_is_explicit_and_not_the_server_default():
+    """Qdrant's default is 2, which is not a value anybody chose.
+
+    Verified empirically rather than from docs: `FusionQuery(fusion=Fusion.RRF)` and
+    `RrfQuery(rrf=Rrf(k=2))` return an identical id-set and an identical score multiset over
+    this collection.
+    """
+    assert settings().rrf_k != 2, (
+        "the ranking constant is back to Qdrant's default — set RAG_RRF_K or DEFAULT_RRF_K"
+    )
+
+
+def test_dbsf_can_be_selected_for_the_ablation(monkeypatch):
+    """Score-magnitude fusion as an alternative to rank fusion (§6.3).
+
+    Kept switchable because "RRF is the robust default" is a claim worth being able to test on
+    this corpus rather than cite.
+    """
+    monkeypatch.setenv("RAG_FUSION", "dbsf")
+    settings.cache_clear()
+    try:
+        query = build_hybrid_query(
+            dense=[0.1] * 8,
+            sparse=models.SparseVector(indices=[1], values=[1.0]),
+            limit=10,
+        )
+        assert query["query"].fusion == models.Fusion.DBSF
+    finally:
+        settings.cache_clear()
 
 
 def test_prefetch_limits_are_wider_than_the_final_limit():

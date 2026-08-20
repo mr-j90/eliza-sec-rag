@@ -7,6 +7,33 @@ this history as a deliverable in its own right rather than as a byproduct.
 Expect the interesting entries to be failures. "v2 over-cited and became unreadable" says
 more about the work than a list of clean wins.
 
+The version here is the one `retrieval_meta.prompt_version` reports on every answer, so any
+answer can be traced to the prompt that produced it. `tests/test_prompt_template.py` asserts
+the live version has an entry and that the numbering has no gaps — a gap would mean an
+iteration happened and was not written down, which is the one thing this file exists to
+prevent.
+
+The rendered prompt itself is [`docs/PROMPT_TEMPLATE.md`](docs/PROMPT_TEMPLATE.md), generated
+from `src/prompt.py` rather than transcribed, with a test that fails if the two disagree.
+
+## What an entry contains
+
+Not a template to fill in — the useful ones vary — but each answers these, and an entry that
+cannot answer the second and fourth is not worth writing:
+
+- **What changed.** The actual text, before and after, or close enough to quote.
+- **Why.** The failure it addresses, with the measurement or the transcript that revealed it.
+  "Improved the prompt" is not a reason.
+- **Observed effect.** What the change did, including when the answer is "nothing measurable".
+- **What it made worse.** Prompt changes trade off; the entry that hides this is the one that
+  misleads the next person. Several entries below exist mostly to record a regression the
+  change forced.
+
+Entries headed **"observed again … (no prompt change)"** record a change in the *context* the
+prompt receives — a new reranker, reflowed passages, bound table captions — rather than an edit
+to the prompt. They are logged because the prompt's behaviour changed even though its text did
+not, and the log would otherwise imply it had been working against the same input all along.
+
 ---
 
 ## v1 — 2026-08-19 — the two rules everything else depends on
@@ -361,3 +388,47 @@ it does not read them on the model's behalf.
 truncates at 512 through this export — do not repeat the 8192 figure. And
 `jina-reranker-v2-base-multilingual` is **CC-BY-NC-4.0**: the strongest option on offer and
 unusable commercially. Both are pinned by tests.
+
+## v7 — 2026-08-20 — quarterly risk factors are labelled as amendments
+
+**What changed.** When any retrieved passage is a 10-Q risk-factor section, its handles are
+named and characterised:
+
+> Note on C5, C6, C7, C8, C9, C10, C11: these are quarterly (Form 10-Q) risk-factor passages,
+> which by regulation state only *material changes* since the company's most recent annual
+> report — not its full risk profile. Treat them as amendments. Do not describe a risk as new
+> or newly disclosed on the strength of one, and do not present them as a complete set of
+> risks. Where an annual (10-K) risk-factor passage is also provided, that is the baseline they
+> amend.
+
+**Why.** Form 10-Q's Item 1A carries only material changes from the 10-K. Measured on this
+corpus, the median annual risk-factor section is **12,876 tokens** against a quarterly
+**2,617** — and at the thin end, *"How did Pfizer's risk factors change in its latest quarterly
+report?"* retrieved **one chunk, 562 tokens**, with no baseline at all. Answered from that, the
+system describes a company's entire risk posture from an amendment: fluent, cited, and wrong
+about the thing it was asked. No retrieval metric detects it, because the passage retrieved is
+genuinely relevant.
+
+The trigger is narrow, which is worth knowing. With no form filter the annual section is ~5x
+larger, yields ~5x more chunks, and dominates retrieval on its own — three probe questions all
+came back 10-K-majority. The failure appears only when the *question's own wording* restricts
+the form ("quarterly", "10-Q"), which `_form_type_in` honours.
+
+**Why the label is needed and not just the baseline.** The retrieval half of this fix
+(relaxing a 10-Q form filter to let the annual risk-factor baseline through) makes the context
+complete — and thereby makes a *new* error available: with baseline and amendment side by side
+and nothing distinguishing them, "newly disclosed this quarter" can be asserted about a risk
+that has sat in the 10-K for years. Supplying more context without saying what it is trades one
+wrong answer for another. The two halves only work together.
+
+**A limit stated in the wording.** The regulation is a floor, not a description of practice.
+Measured, **3 of 15 issuers** here — Meta, Amazon, Microsoft — restate their **full** risk
+factors every quarter; Meta's quarterly Item 1A runs ~36,000 tokens, *larger* than the median
+annual one. So the note says these passages *state only material changes* per the regulation
+rather than asserting they are short, and it tells the model to treat them as amendments rather
+than to discount them. A blanket "quarterly risk factors are incomplete" would have been false
+for a fifth of the corpus.
+
+**Observed effect.** The handles are named correctly (7 of 20 passages on the Tesla quarterly
+question). Not a measurable retrieval change — the retrieval half is what moved those numbers,
+and it is recorded in the ticket rather than here.

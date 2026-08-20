@@ -2,16 +2,16 @@
 #
 # The suite has two tiers, measured rather than assumed (see tests/conftest.py):
 #
-#   122 python tests = 93 that need nothing + 29 that need a live OPENAI_API_KEY.
+#   232 python tests = 201 that need nothing + 31 that need a live OPENAI_API_KEY.
 #   Of those 29, seventeen embed queries and eleven make REAL GENERATION CALLS.
 #   There is no Qdrant-only tier: with Qdrant up and the key removed, all 29 still skip.
-#   Plus 34 frontend tests that need nothing. 156 in total.
+#   Plus 34 frontend tests that need nothing. 266 in total.
 #
 # `make test` deselects the paying tier rather than letting it skip, so the run reports
-# "93 passed, 29 deselected" instead of "93 passed, 29 skipped". The first is a claim you
+# "201 passed, 31 deselected" instead of "201 passed, 31 skipped". The first is a claim you
 # can read; the second is indistinguishable from a suite that quietly tested nothing.
 
-.PHONY: help test test-py test-fe test-live test-all check typecheck lint up down index answers
+.PHONY: help test test-py test-fe test-live test-all eval check typecheck lint up down index answers
 
 help:  ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -20,19 +20,23 @@ help:  ## Show this help
 	@echo "  The default loop is 'make test'. It needs no Docker and no API key."
 	@echo "  'make test-live' SPENDS MONEY — 11 real generation calls. Opt in deliberately."
 
-test: test-py test-fe  ## Fast loop: 93 python + 34 frontend. No services, no key, no cost
+test: test-py test-fe  ## Fast loop: 201 python + 34 frontend. No services, no key, no cost
 
-test-py:  ## The 93 python tests that need nothing
+test-py:  ## The 201 python tests that need nothing
 	uv run pytest -m "not live" -q
 
 test-fe:  ## The 34 frontend tests (node:test, SQLite is a file)
 	cd frontend && bun run test
 
-test-live:  ## The 29 that need a key. 11 make REAL generation calls — this costs money
+test-live:  ## The 31 that need a key. 11 make REAL generation calls — this costs money
 	@echo "This runs 11 real generation calls against $$(grep -m1 DEFAULT_GENERATION_MODEL src/config.py | cut -d'"' -f2)."
 	RAG_REQUIRE_LIVE=1 uv run pytest -m live -q
 
 test-all: test test-live  ## Everything, including the paying tier
+
+eval:  ## Retrieval metrics over the golden set. Needs Qdrant + a key; embeds 22 queries
+	@echo "22 questions, ~2 min. RAG_RERANK=0 for the fusion-only row. See docs/EVALUATION.md."
+	uv run python -m src.eval.metrics
 
 check: typecheck lint  ## Static checks nothing else currently runs
 
@@ -50,7 +54,7 @@ up:  ## Start Qdrant (host port 6533 — deliberately not 6333, see docker-compo
 down:  ## Stop Qdrant, keeping the volume
 	docker compose down
 
-index:  ## Build the index. NOT needed if the volume already holds 29,499 points
+index:  ## Build the index (~15 min, ~$0.40). Required once on a fresh volume
 	uv run python -m src.index
 
 answers:  ## Start the backend the frontend expects on :8000

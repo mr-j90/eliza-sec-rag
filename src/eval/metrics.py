@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import statistics
 import sys
 from dataclasses import dataclass, field
@@ -49,6 +50,26 @@ def _files(retrieved: list[str], k: int) -> list[str]:
         if name not in seen:
             seen.append(name)
     return seen
+
+
+def normalized_recall_at_k(retrieved: list[str], relevant: set[str], k: int) -> float:
+    """`hits / min(k, |R|)` — recall against what was *attainable*, not against 1.0.
+
+    The only one of the audit's three metric fixes implemented here, because without it the
+    headline number is actively misleading rather than merely limited. Relevant-file counts in
+    this golden set run from **1 to 36**, so raw `recall@5` has a per-question ceiling between
+    **0.139 and 1.000** — on `cc-01` no configuration change can move it by more than 0.139 in
+    absolute terms. Averaging raw recall across those questions averages incommensurable
+    quantities, and the mean is then dominated by label cardinality rather than by retrieval.
+
+    Reported alongside raw recall rather than replacing it, so the two can be compared and the
+    gap between them is itself visible.
+    """
+    if not relevant:
+        return 0.0
+    attainable = min(k, len(relevant))
+    hits = len(set(_files(retrieved, k)) & relevant)
+    return hits / attainable if attainable else 0.0
 
 
 def recall_at_k(retrieved: list[str], relevant: set[str], k: int) -> float:
@@ -97,6 +118,9 @@ class QuestionResult:
     id: str
     category: str
     recall: dict[int, float] = field(default_factory=dict)
+    # `hits / min(k, |R|)` — see `normalized_recall_at_k`. Carried alongside raw recall so the
+    # gap between "what we got" and "what the labels allowed" is visible per question.
+    normalized_recall: dict[int, float] = field(default_factory=dict)
     mrr: float = 0.0
     ndcg: float = 0.0
     entity_coverage: dict[int, float | None] = field(default_factory=dict)
@@ -120,6 +144,7 @@ def score_question(
         n_relevant=len(relevant),
         n_files_retrieved=len(set(files)),
         recall={k: recall_at_k(files, relevant, k) for k in RECALL_KS},
+        normalized_recall={k: normalized_recall_at_k(files, relevant, k) for k in RECALL_KS},
         mrr=mrr_at_k(files, relevant, RANK_K),
         ndcg=ndcg_at_k(files, relevant, RANK_K),
         entity_coverage={
@@ -146,6 +171,14 @@ def score_question(
     return out
 
 
+def _config_label() -> str:
+    """What actually ran, so two result files cannot be confused for each other."""
+    from src.config import settings
+
+    base = "hybrid+quotas+prefix"
+    return f"{base}+rerank" if settings().rerank_enabled else base
+
+
 def _mean(values: list[float]) -> float | None:
     return round(statistics.mean(values), 4) if values else None
 
@@ -159,6 +192,10 @@ def aggregate(scored: list[QuestionResult]) -> dict:
         return {
             "n": len(rows),
             **{f"recall@{k}": _mean([r.recall[k] for r in rows]) for k in RECALL_KS},
+            **{
+                f"normalized_recall@{k}": _mean([r.normalized_recall[k] for r in rows])
+                for k in RECALL_KS
+            },
             f"mrr@{RANK_K}": _mean([r.mrr for r in rows]),
             f"ndcg@{RANK_K}": _mean([r.ndcg for r in rows]),
             **{f"entity_coverage@{k}": _mean(coverage[k]) for k in COVERAGE_KS},
@@ -176,7 +213,7 @@ def run(
     retriever: Callable[[str, int], list[Retrieved]] = retrieve_for,
     *,
     k: int = 20,
-    label: str = "hybrid+quotas+prefix",
+    label: str | None = None,
 ) -> dict:
     """Score every answerable golden question. Returns the results document."""
     questions = load()
@@ -186,7 +223,7 @@ def run(
     scored = [score_question(q, retriever(q.question, k)) for q in answerable]
 
     return {
-        "config": label,
+        "config": label or _config_label(),
         "k": k,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "n_scored": len(scored),
@@ -208,6 +245,10 @@ def run(
                 "id": r.id,
                 "category": r.category,
                 **{f"recall@{k_}": round(v, 4) for k_, v in r.recall.items()},
+                **{
+                    f"normalized_recall@{k_}": round(v, 4)
+                    for k_, v in r.normalized_recall.items()
+                },
                 f"mrr@{RANK_K}": round(r.mrr, 4),
                 f"ndcg@{RANK_K}": round(r.ndcg, 4),
                 **{
@@ -228,11 +269,32 @@ def run(
     }
 
 
+def _run_filename(document: dict) -> str:
+    """`2026-08-20T115103Z--hybrid-quotas-prefix-rerank.json`.
+
+    Timestamp first so a directory listing sorts chronologically, config second so two runs are
+    distinguishable at a glance. Both are already in the document; this only makes them findable
+    without opening every file.
+    """
+    stamp = str(document.get("generated_at", "")).replace(":", "").replace("-", "")[:15]
+    config = re.sub(r"[^a-z0-9]+", "-", str(document.get("config", "run")).lower()).strip("-")
+    return f"{stamp or 'unknown'}--{config}.json"
+
+
 def main(argv: list[str]) -> int:
     document = run()
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    out = RESULTS_DIR / "retrieval_metrics.json"
-    out.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+    # One file per run, never overwritten. Comparing configurations is the whole point of this
+    # harness — docs/EVALUATION.md's tables are all before/after — and a single overwritten file
+    # makes that impossible without copying results out by hand between runs, which is what was
+    # happening. `latest.json` is kept as a stable path for anything that wants the newest.
+    (RESULTS_DIR / _run_filename(document)).write_text(
+        json.dumps(document, indent=2) + "\n", encoding="utf-8"
+    )
+    (RESULTS_DIR / "latest.json").write_text(
+        json.dumps(document, indent=2) + "\n", encoding="utf-8"
+    )
 
     overall = document["overall"]
     print(f"config: {document['config']}  k={document['k']}", flush=True)
@@ -241,6 +303,8 @@ def main(argv: list[str]) -> int:
         f"({document['n_unanswerable']} unanswerable excluded)",
         flush=True,
     )
+    for key in (f"normalized_recall@{k}" for k in RECALL_KS):
+        print(f"  {key:24s} {overall[key]}", flush=True)
     for key in (f"recall@{k}" for k in RECALL_KS):
         print(f"  {key:24s} {overall[key]}", flush=True)
     print(f"  mrr@{RANK_K:<21d} {overall[f'mrr@{RANK_K}']}", flush=True)
@@ -257,7 +321,7 @@ def main(argv: list[str]) -> int:
         print(f"\n  {len(suspects)} question(s) scored 0 recall@{RANK_K}:", flush=True)
         for q in suspects:
             print(f"    {q['id']}: {q['suspect']}", flush=True)
-    print(f"\nwrote {out}", flush=True)
+    print(f"\nwrote {RESULTS_DIR / _run_filename(document)} (and latest.json)", flush=True)
     return 0
 
 

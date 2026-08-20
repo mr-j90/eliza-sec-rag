@@ -7,6 +7,8 @@ which is the easiest mistake to make with nDCG in particular.
 
 import math
 
+import pytest
+
 from src.eval.metrics import dcg, entity_coverage_at_k, mrr_at_k, ndcg_at_k, recall_at_k
 
 
@@ -68,3 +70,47 @@ def test_entity_coverage_is_undefined_when_the_question_names_nobody():
     """Sector and unanswerable questions name no company. Returning 0.0 would drag every
     average down and mean nothing; None keeps them out of the aggregate."""
     assert entity_coverage_at_k(["AAPL"], [], k=10) is None
+
+
+# --- normalized recall (ticket 10) --------------------------------------------------------
+
+
+def test_normalized_recall_scores_against_what_was_attainable():
+    """`hits / min(k, |R|)`, not `hits / |R|`.
+
+    With 36 relevant files and k=5, retrieving 5 of them is a perfect result that raw recall
+    reports as 0.139. Averaging that alongside a question with one relevant file averages
+    incommensurable quantities, and the mean ends up dominated by label cardinality.
+    """
+    from src.eval.metrics import normalized_recall_at_k, recall_at_k
+
+    relevant = {f"f{i}.txt" for i in range(36)}
+    retrieved = [f"f{i}.txt" for i in range(5)]
+
+    assert recall_at_k(retrieved, relevant, 5) == pytest.approx(5 / 36, abs=1e-4)
+    assert normalized_recall_at_k(retrieved, relevant, 5) == 1.0, (
+        "retrieving every file that fits in k is a perfect score"
+    )
+
+
+def test_normalized_and_raw_recall_agree_when_the_ceiling_is_one():
+    """Where |R| <= k there is no ceiling effect, so the two must not diverge."""
+    from src.eval.metrics import normalized_recall_at_k, recall_at_k
+
+    relevant = {"a.txt", "b.txt"}
+    retrieved = ["a.txt", "z.txt"]
+    assert recall_at_k(retrieved, relevant, 10) == normalized_recall_at_k(retrieved, relevant, 10)
+
+
+def test_normalized_recall_is_never_above_one():
+    """Duplicated files in the retrieved list must not inflate it past a perfect score."""
+    from src.eval.metrics import normalized_recall_at_k
+
+    relevant = {"a.txt"}
+    assert normalized_recall_at_k(["a.txt", "a.txt", "a.txt"], relevant, 5) == 1.0
+
+
+def test_no_relevant_files_scores_zero_rather_than_dividing_by_zero():
+    from src.eval.metrics import normalized_recall_at_k
+
+    assert normalized_recall_at_k(["a.txt"], set(), 5) == 0.0

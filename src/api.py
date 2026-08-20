@@ -21,9 +21,10 @@ from pydantic import BaseModel, Field, field_validator
 
 from src import index, prompt
 from src.coverage import coverage_of
+from src.verify import verify_citations
 from src.config import settings
 from src.llm import LLM, ProviderNotConfigured, build_llm
-from src.query import plan
+from src.query import QueryPlan, fiscal_year_range, plan
 from src.retrieve import Retrieved, retrieval_description, retrieve_for
 
 app = FastAPI(title="SEC Filings RAG", version="0.2.0")
@@ -40,6 +41,18 @@ def get_llm() -> LLM:
 
 def get_retriever() -> Retriever:
     return retrieve_for
+
+
+def get_index_size() -> int:
+    """Points in the collection — 0 when the index is empty *or* unreachable.
+
+    Injected for the same reason the provider and retriever are: it is what tells an empty
+    index apart from a query whose filters excluded everything, and the two need opposite
+    responses. `index.count()` already returns 0 for an unreachable Qdrant, and both cases
+    mean the same thing to a caller: there is nothing to answer from and the operator has to
+    act.
+    """
+    return index.count()
 
 
 class AskRequest(BaseModel):
@@ -79,6 +92,7 @@ def ask(
     request: AskRequest,
     llm: Annotated[LLM, Depends(get_llm)],
     retriever: Annotated[Retriever, Depends(get_retriever)],
+    index_size: Annotated[int, Depends(get_index_size)],
 ) -> dict[str, Any]:
     started = time.perf_counter()
 
@@ -90,13 +104,20 @@ def ask(
     retrieved_at = time.perf_counter()
 
     if not results:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Nothing was retrieved. The index may be empty — build it with "
-                "`uv run python -m src.index`."
-            ),
-        )
+        # Two different failures used to share one message, and it named the wrong one. An
+        # empty result with a populated index means the question's own scope excluded
+        # everything — a year the corpus does not cover, most often — and telling that reader
+        # to rebuild the index sends them after a problem they do not have. Worse, on a demo
+        # it reads as the system being broken when it is behaving exactly as designed.
+        if index_size == 0:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Nothing was retrieved and the index is empty or unreachable — build it "
+                    "with `uv run python -m src.index` and check Qdrant is up."
+                ),
+            )
+        return _no_matches(query_plan, started, retrieved_at)
 
     chunks = [result.chunk for result in results]
 
@@ -122,9 +143,14 @@ def ask(
     )
     finished = time.perf_counter()
 
+    cited = prompt.citations(chunks)
+    # Checked, not trusted. A handle that resolves to nothing is a false claim of groundedness,
+    # which is worse than no citation — and the count the UI shows should be a verified one.
+    check = verify_citations(answer, [c.id for c in cited])
+
     return {
         "answer": answer,
-        "citations": [asdict(citation) for citation in prompt.citations(chunks)],
+        "citations": [asdict(citation) for citation in cited],
         "retrieval_meta": {
             # SPEC §8's field, populated at last. Tickers in the order the question named
             # them; `unresolved_mentions` are capitalised names that look like companies but
@@ -135,6 +161,7 @@ def ask(
             "form_type": query_plan.form_type,
             "n_chunks": len(chunks),
             "coverage": coverage.as_dict(),
+            "citation_check": check.as_dict(),
             "generation_model": settings().generation_model,
             "prompt_version": prompt.PROMPT_VERSION,
             "retrieval": retrieval_description(),
@@ -143,6 +170,52 @@ def ask(
                 "retrieval": round((retrieved_at - started) * 1000, 1),
                 "generation": round((finished - retrieved_at) * 1000, 1),
                 "total": round((finished - started) * 1000, 1),
+            },
+        },
+    }
+
+
+def _no_matches(
+    query_plan: QueryPlan,
+    started: float,
+    retrieved_at: float,
+) -> dict[str, Any]:
+    """A 200 with a refusal, not a 5xx — the request was well-formed and answered honestly.
+
+    Deliberately **no LLM call**: with zero passages there is nothing to ground an answer in,
+    so a generated one could only come from the model's own knowledge of these companies,
+    which is what rule 1 of the system prompt forbids. `retrieval_meta` keeps the same shape
+    the answering path returns, so the UI renders this like any other answer — `n_chunks: 0`
+    and an empty citation list are the honest values, not missing ones.
+    """
+    answer = prompt.no_matches_answer(
+        companies=query_plan.companies,
+        fiscal_years=query_plan.fiscal_years,
+        form_type=query_plan.form_type,
+        corpus_years=fiscal_year_range(),
+    )
+    return {
+        "answer": answer,
+        "citations": [],
+        "retrieval_meta": {
+            "entities_detected": query_plan.companies,
+            "unresolved_mentions": query_plan.unresolved_mentions,
+            "fiscal_years": list(query_plan.fiscal_years) if query_plan.fiscal_years else None,
+            "form_type": query_plan.form_type,
+            "n_chunks": 0,
+            "coverage": coverage_of([], named=query_plan.companies).as_dict(),
+            # Vacuously verified, and true: no handle was written, so none can be fabricated.
+            "citation_check": verify_citations(answer, []).as_dict(),
+            # No `generation_model`: nothing generated this. The field is what the UI labels an
+            # answer with, and labelling this one with a model that was never called would be
+            # the same class of lie as the citation contract exists to prevent.
+            "prompt_version": prompt.PROMPT_VERSION,
+            "retrieval": retrieval_description(),
+            "no_matches": True,
+            "latency_ms": {
+                "retrieval": round((retrieved_at - started) * 1000, 1),
+                "generation": 0.0,
+                "total": round((retrieved_at - started) * 1000, 1),
             },
         },
     }

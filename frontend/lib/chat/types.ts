@@ -48,6 +48,25 @@ export type RetrievalMeta = {
   form_type?: string | null;
   n_chunks?: number;
   /**
+   * Whether every `[Cn]` in the answer resolves to a passage that was actually retrieved —
+   * checked server-side rather than inferred from the text.
+   *
+   * `fabricated` should always be empty; a handle pointing at nothing is a false claim of
+   * groundedness, which is worse than no citation because it looks like provenance. It is
+   * surfaced rather than stripped: editing the model's answer would make a failed check
+   * indistinguishable from a passed one.
+   *
+   * `n_cited: 0` with an empty `fabricated` is a **correct refusal**, not a failure — the
+   * refusal path emits no handles by design.
+   */
+  citation_check?: {
+    cited?: string[];
+    fabricated?: string[];
+    n_cited?: number;
+    n_available?: number;
+    verified?: boolean;
+  };
+  /**
    * What the answer stood on, computed by the backend — never by the model.
    *
    * The counts are **distinct filings**, not passages: five Merck passages from one filing
@@ -73,6 +92,13 @@ export type RetrievalMeta = {
     named_but_absent?: string[];
     sentence?: string;
   };
+  /**
+   * True when retrieval matched nothing against a populated index — the question's own scope
+   * (a period this corpus does not cover, most often) excluded every passage. The answer is a
+   * refusal written by the backend, and `generation_model` is **absent** because no model call
+   * was made: with no passages there is nothing to ground one in.
+   */
+  no_matches?: boolean;
   generation_model?: string;
   prompt_version?: string;
   retrieval?: string;

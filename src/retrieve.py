@@ -18,7 +18,7 @@ from typing import Any
 
 from qdrant_client import models
 
-from src.chunks import Chunk
+from src.chunks import RISK_FACTOR_SECTIONS, Chunk
 from src.config import settings
 from src.embed import dense_query, sparse_query
 from src.index import client
@@ -47,6 +47,25 @@ class Retrieved:
     score: float
 
 
+def _fusion_query() -> models.FusionQuery | models.RrfQuery:
+    """The fusion step, with its constant stated rather than inherited.
+
+    `FusionQuery(fusion=Fusion.RRF)` accepts no ranking constant and Qdrant defaults it to
+    **2** — confirmed by comparing against `RrfQuery(rrf=Rrf(k=2))`, which returns an identical
+    id-set and score multiset. `RrfQuery` is the newer form and does take `k`, so the constant
+    is set explicitly here: a value that only exists as a server default is a value nobody can
+    defend in a review.
+
+    `RAG_FUSION=dbsf` selects distribution-based score fusion, which uses score *magnitude*
+    rather than rank. It can beat RRF when one leg is confidently right — plausible on a corpus
+    this identifier-dense — and Qdrant appears to be the only mainstream store shipping it.
+    """
+    config = settings()
+    if config.fusion == "dbsf":
+        return models.FusionQuery(fusion=models.Fusion.DBSF)
+    return models.RrfQuery(rrf=models.Rrf(k=config.rrf_k))
+
+
 def build_hybrid_query(
     *,
     dense: list[float],
@@ -69,7 +88,7 @@ def build_hybrid_query(
                 query=sparse, using="sparse", limit=max(PREFETCH_LIMIT, limit * 2), filter=query_filter
             ),
         ],
-        "query": models.FusionQuery(fusion=models.Fusion.RRF),
+        "query": _fusion_query(),
         "limit": limit,
         "query_filter": query_filter,
     }
@@ -174,7 +193,9 @@ def _search(
     # output by company-then-section deliberately — reordering that by score would break the
     # grouping that makes a comparison readable.
     deduped = suppress_near_duplicates(candidates)
-    ranked, reranked = reorder(question, deduped)
+    ranked, reranked = (
+        reorder(question, deduped) if settings().rerank_enabled else (deduped, False)
+    )
     global _LAST_RERANKED
     _LAST_RERANKED = reranked
     return ranked[:k]
@@ -200,12 +221,52 @@ def _scope_filter(
             models.FieldCondition(key="fiscal_year", range=models.Range(gte=low, lte=high))
         )
     if plan.form_type:
-        conditions.append(
-            models.FieldCondition(
-                key="form_type", match=models.MatchValue(value=plan.form_type)
-            )
-        )
+        conditions.append(_form_scope(plan.form_type))
     return models.Filter(must=conditions) if conditions else None
+
+
+def _form_scope(form_type: str) -> models.Filter | models.FieldCondition:
+    """The form filter — which lets the 10-K risk-factor baseline through a 10-Q scope.
+
+    A 10-Q's Item 1A carries only *material changes* from the 10-K. Measured, a question
+    scoped to quarterly filings ("What are Tesla's quarterly risk factors?") retrieved **7
+    chunks and 5,372 tokens** of amendments with no baseline at all, and Pfizer's case was **1
+    chunk, 562 tokens** — presented as a complete risk profile against an annual section past
+    10,000 tokens.
+
+    Note this is a *narrow* trigger, not a general problem: with no form filter the 10-K's
+    Item 1A is ~5x larger and so yields ~5x more chunks, and it dominates retrieval naturally.
+    The failure only appears when the question's own wording restricts the form. So the filter
+    is relaxed for exactly that case rather than the quota design being reworked.
+
+    Widening a scope the user asked for needs justifying: the reader asked about quarterly
+    filings and gets some annual passages. It is the right trade because the alternative is an
+    answer that is confidently incomplete, and because the annual passages are labelled — the
+    prompt says which are baseline and which are amendments (v7), so a "new this quarter"
+    claim cannot be made about a long-standing risk.
+    """
+    scoped = models.FieldCondition(
+        key="form_type", match=models.MatchValue(value=form_type)
+    )
+    if form_type.upper() != "10-Q":
+        return scoped
+    return models.Filter(
+        should=[
+            scoped,
+            # The annual baseline for the amendments a 10-Q files.
+            models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="form_type", match=models.MatchValue(value="10-K")
+                    ),
+                    models.FieldCondition(
+                        key="item_section",
+                        match=models.MatchAny(any=sorted(RISK_FACTOR_SECTIONS)),
+                    ),
+                ]
+            ),
+        ]
+    )
 
 
 def retrieve_for(question: str, k: int = 20) -> list[Retrieved]:

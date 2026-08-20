@@ -43,6 +43,15 @@ SPARSE_MODEL = "Qdrant/bm25"
 # CC-BY-NC-4.0 and therefore unusable commercially.
 RERANK_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
 
+# The RRF ranking constant, set **explicitly**. Qdrant's `FusionQuery(RRF)` defaults to 2 —
+# verified empirically, not read off a changelog: `RrfQuery(rrf=Rrf(k=2))` returns an identical
+# id-set and score multiset. Prior art ran that default while its prose claimed the Cormack et
+# al. "k=60", which is the kind of prose/code disagreement that gets caught in a demo.
+#
+# `RAG_RRF_K` overrides it, and `RAG_FUSION=dbsf` swaps RRF for distribution-based score fusion.
+# Both exist so the choice is a measurement rather than a citation — see docs/EVALUATION.md.
+DEFAULT_RRF_K = 60
+
 COLLECTION = "filings"
 
 # The host port our own compose service binds. Deliberately not 6333: another project on
@@ -63,6 +72,12 @@ class Settings:
     corpus_dir: Path
     openai_api_key: str | None
     openai_base_url: str | None
+    # `RAG_RERANK=0` turns the cross-encoder off. It exists so "does reranking help?" is a
+    # measurement rather than an assertion — §7's ablation needs the row it cannot otherwise
+    # produce, and the answer turned out to be interesting (see docs/EVALUATION.md).
+    rerank_enabled: bool
+    rrf_k: int
+    fusion: str
 
     @property
     def provider_configured(self) -> bool:
@@ -86,4 +101,7 @@ def settings() -> Settings:
         corpus_dir=Path(corpus) if corpus else REPO_ROOT / "edgar_corpus",
         openai_api_key=_env("OPENAI_API_KEY"),
         openai_base_url=_env("OPENAI_BASE_URL"),
+        rerank_enabled=(_env("RAG_RERANK") or "1") not in {"0", "false", "no"},
+        rrf_k=int(_env("RAG_RRF_K") or DEFAULT_RRF_K),
+        fusion=(_env("RAG_FUSION") or "rrf").lower(),
     )

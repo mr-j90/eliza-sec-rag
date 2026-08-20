@@ -123,3 +123,39 @@ def test_the_plan_is_pure_and_needs_no_services():
     """
     p = plan(PANEL_COMPARATIVE)
     assert p.companies and p.fiscal_years is None and p.form_type is None
+
+
+def test_a_name_containing_a_lowercase_connective_is_read_as_one_company():
+    """"Bank of America" is one company, not the words "Bank" and "America".
+
+    Capitalised runs used to stop at the lowercase "of", so this span was never tested against
+    the dictionary at all — it resolved only because bare "bank" mapped to BAC, which resolved
+    "bank regulations" the same way. Fixing that alias without fixing the run would have taken
+    a company with 4 filings here down to ticker-only.
+    """
+    assert plan("What does Bank of America disclose about credit losses?").companies == ["BAC"]
+    assert plan("What does Procter and Gamble say about commodity costs?").companies == ["PG"]
+
+
+def test_absent_companies_joined_by_and_are_named_separately():
+    """The golden set's unanswerable comparison. One mention reading "Spotify and Rivian" would
+    still refuse correctly, but the refusal names what it cannot speak about, and it should
+    name two companies because two were asked about.
+    """
+    assert plan("Compare the risks disclosed by Spotify and Rivian.").unresolved_mentions == [
+        "Spotify",
+        "Rivian",
+    ]
+
+
+def test_a_descriptor_alone_is_not_reported_as_an_absent_company():
+    """`unresolved_mentions` drives the "no filings for X" line in an answer. A bare descriptor
+    is not a company, so reporting one puts a sentence in the answer saying this corpus holds
+    no filings for "Technologies". Two words still count — "General Motors" is a real company
+    with no filings here, and naming it is the point of the list.
+    """
+    assert plan("Which Technologies are named in these filings?").unresolved_mentions == []
+    assert plan("How do Bank regulations affect lenders?").unresolved_mentions == []
+    assert plan("Compare Tesla and General Motors on demand.").unresolved_mentions == [
+        "General Motors"
+    ]

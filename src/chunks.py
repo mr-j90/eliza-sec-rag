@@ -28,6 +28,24 @@ class Chunk:
     source_file: str
     token_count: int
 
+    @property
+    def is_incremental_risk_factors(self) -> bool:
+        """A 10-Q's Item 1A carries only *material changes* from the 10-K, by regulation.
+
+        Measured on this corpus: median 10-K Item 1A is **12,876 tokens** against a 10-Q's
+        **2,617** — and at the thin end, Pfizer's quarterly risk section is 562 tokens where
+        its annual one runs past 10,000. An answer built from the quarterly text alone
+        presents an amendment as a complete risk profile, which is fluent, cited, and wrong
+        about the thing it was asked.
+
+        Derived rather than stored: it follows entirely from `form_type` and `item_section`, so
+        a payload field would be a second copy that could disagree with them. Note the
+        regulation is a floor, not a description — 3 of 15 issuers here (Meta, Amazon,
+        Microsoft) restate their full risk factors quarterly, so this flags what *may* be
+        incremental and the prompt is worded accordingly.
+        """
+        return "10-Q" in self.form_type.upper() and self.item_section in RISK_FACTOR_SECTIONS
+
 
 @lru_cache(maxsize=1)
 def _encoding():
@@ -36,6 +54,13 @@ def _encoding():
     # cl100k_base is what text-embedding-3-small uses, so "800 tokens" means the same
     # thing here as it does at the embedder.
     return tiktoken.get_encoding("cl100k_base")
+
+
+# The two labels a risk-factor section can carry. A 10-Q files its risk factors under
+# *Part II* Item 1A; a 10-K under Item 1A.
+RISK_FACTOR_SECTIONS = frozenset(
+    {"Item 1A — Risk Factors", "Part II Item 1A — Risk Factors"}
+)
 
 
 def count_tokens(text: str) -> int:

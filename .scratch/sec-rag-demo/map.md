@@ -4,6 +4,9 @@ Label: `wayfinder:map`
 
 ## Destination
 
+*Extended once after completion, at the user's request: an evals page in the front-end
+(ticket 16), so the evaluation work is visible in the demo rather than only in prose.*
+
 A **working demo** the interview panel can drive: they type one of their three business
 questions into the existing `frontend/` input field, and get back a well-structured,
 cited, coverage-honest answer produced by **exactly one LLM API call** — plus the brief's
@@ -182,6 +185,95 @@ These are standing constraints, not route steps. Every session respects them.
   company-then-section grouping survives. `jina-reranker-v2` excluded on **CC-BY-NC**, pinned
   by a test. Retrieval 1.0s → 1.7s.
 
+- [10 — Smoke eval gate and the quality-notes deliverable](issues/10-smoke-eval-and-quality-notes.md)
+  — deliverable is **`docs/EVALUATION.md`**; gate is `make test-live` (28 tests), metrics are
+  `make eval`. The gate largely already existed and is better than this ticket planned — the
+  ported answer-contract tests check refusal **on the answer, not the alias**, which was the
+  audit's actual complaint about the prior attempt. **Answered ticket 04's open question:**
+  reranking is better on **8 questions, worse on 4, tied on 10** (n=22), mean +0.02 with
+  per-question swings of ±0.25–0.40 — kept, reported as **directional, not evidence**, and both
+  regressions are *sector* questions where no quotas apply. Implemented **`normalized_recall@k`**
+  (the one fix worth having: |R| spans 1–36, so `recall@10 = 0.521` is really **64% of
+  attainable**). Added `RAG_RERANK=0` so the comparison is a measurement, not an assertion.
+
+- [11 — Prompt-iteration log](issues/11-prompt-iteration-log.md) — the log did its job by being
+  written as the work happened: **363 lines, v1–v6 with no gaps**, plus three
+  no-prompt-change entries recording context changes (reranking, table binding). Leaving it
+  unblocked at charting was right — none of it needed reconstructing. The real work was fork 4,
+  the brief's *separate* "final prompt template" deliverable, which did not exist as anything
+  readable: now **`docs/PROMPT_TEMPLATE.md`**, showing both the answering and refusing forms,
+  **generated from `src/prompt.py`** with a test that fails on any difference. That discipline
+  earned its place — this repo has already been bitten twice by a drifting second copy
+  (`frontend/README.md`, and `prompt.py`'s docstring claiming v2 while the code ran v4). Log
+  conventions are now stated in its own header, including that an entry unable to say *why* and
+  *what it made worse* is not worth writing.
+
+- [05 — RRF k and where fusion happens](issues/05-rrf-k-and-fusion-location.md) — **fusion
+  stays server-side; k is now explicit at 60.** The ticket's central fork *dissolved*: it
+  assumed (following §6.2) that qdrant-client 1.19.0 exposes no ranking constant, but the same
+  version ships **`RrfQuery(rrf=Rrf(k=..., weights=...))`** — so app-side fusion was never
+  needed. The defect is confirmed empirically: `FusionQuery(RRF)` returns an identical id-set
+  and score multiset to `RrfQuery(k=2)`, so prior art ran **k=2 while its prose claimed 60**.
+  Swept 2/10/60/100 plus DBSF: **total spread 0.008–0.023**, and k=60 ≡ k=100 on every metric —
+  reproducing Cormack et al.'s own "not critical" finding on this corpus. **DBSF is competitive,
+  not better** (+0.003 nDCG), correcting §6.3's speculation. BM25 `b`/`k1` left at defaults with
+  a reason: §5.1's 19× document-length argument does not apply to **chunks**, whose length spans
+  4×, and measured mean 236 vs the 256 default is an 8% gap.
+
+- [08 — 10-K baseline anchoring for temporal questions](issues/08-temporal-baseline-anchoring.md)
+  — **both halves, and they only work together.** `PROMPT_VERSION` → **v7**. Two corrections to
+  the premise: the gap is **4.9×** (12,876 vs 2,617 tokens), not §4.4's 12.7×; and the
+  regulation is a floor, not practice — **3 of 15 issuers** (META 1.00×, AMZN 0.95×) restate
+  their full risk factors quarterly, so a blanket "quarterly is incomplete" rule would be false
+  for a fifth of the corpus. The bug is **latent**: the annual section is 5× larger so it wins on
+  chunk volume and dominates retrieval unaided — it only fires when the *question* restricts the
+  form, where Pfizer measured **1 chunk / 562 tokens** presented as a complete risk profile. Fix
+  is correspondingly narrow: a 10-Q scope now admits 10-K *risk-factor* passages only (verified
+  no leak — a quarterly *results* question still returns 10-Q only), and those quarterly
+  passages are named in the prompt as amendments, because supplying the baseline unlabelled
+  makes "newly disclosed this quarter" assertable about a years-old risk. Derived property, not
+  a payload field — **no re-embed**.
+
+- [09 — Verifiable citation enforcement](issues/09-citation-enforcement.md) — handles checked
+  server-side, reported in `retrieval_meta.citation_check`, **flagged never stripped** (a
+  stripped answer looks identical whether or not the check ran, so stripping makes the guarantee
+  unobservable — asserted by a test that `verify.py` contains no `replace`/`sub`). Baseline
+  measured first: **zero fabricated handles across 13 saved runs**, so this guards a failure that
+  has not occurred — worth having because a *checked* claim beats one that has merely held. The
+  refusal trap is handled: Shopify returns `n_cited: 0, n_available: 20, verified: true`.
+- [12 — All seven deliverables, and a cold start](issues/12-deliverables-and-cold-start.md) —
+  **all seven present**, with `README.md` and `example-request.sh` written here. Verified
+  mechanically: every `make` target the README names exists, every relative link resolves, quoted
+  test counts match collection. **Both of ticket 01's blockers are gone** — `bun dev` works (the
+  Node 25 failure was a stale `node_modules`, not an incompatibility), and rather than document
+  around the Qdrant volume footgun, the compose file was made self-consistent and **the 972.8 MB
+  volume migrated with no re-embedding** — 30,383 points green, now served by `make up` from this
+  repo. `frontend/README.md` rewritten; it still described the pre-RAG chat app.
+
+- [13 — The walkthrough](issues/13-walkthrough-and-future-state.md) — **`docs/WALKTHROUGH.md`**:
+  six beats, ~20 min, opening on the failure a PE analyst fears rather than on architecture. The
+  Shopify refusal is the set piece. Future state is split so the halves land with different people
+  — the user's own `docs/future-state.md` list leads (inline citations linking back into the
+  filing, CIK/date management, building the eval set from logged queries, streaming), engineering
+  items follow. Scripts the honest re-index answer. **Rehearsed on all three panel questions —
+  5/5 sections, citations verified, 12–22s — and the rehearsal changed the script twice:** quoting
+  exact coverage numbers would have set up a live contradiction (runs returned `JNJ 3 of 17` and
+  `JNJ 4 of 17` for the same question), so it now coaches reading the screen and the *shape*; and
+  20 seconds of silence needs narrating. Carries a "things not to say" list, every entry of which
+  is a plausible claim measured to be false.
+
+- [16 — An evals page in the front-end](issues/16-evals-page.md) — **storage is JSON files, one
+  per run, not SQLite**: the harness is Python and `frontend/lib/db/` is deliberately the only SQL
+  in the app, so a second runtime writing that schema would mean cross-language migrations for
+  data with no relational shape — while the operation that matters, comparing two runs, is what
+  files do natively. The enabling fix: `metrics.py` **overwrote a single file**, so history did not
+  exist and every before/after table in `docs/EVALUATION.md` had been produced by copying results
+  out by hand. Now `<timestamp>--<config>.json`, never overwritten. `/evals` shows configurations
+  side by side plus a footer carrying the point that three of the metrics on screen are **not**
+  load-bearing. Rendering it caught two bugs `tsc` could not — the delta subtracted backwards,
+  and then its "newest − oldest" label implied a progression that the run order does not
+  represent. Both were wrong *meaning*, not wrong types.
+
 ## Not yet specified
 
 In scope, but not yet sharp enough to ticket. Graduates as the frontier advances.
@@ -190,11 +282,11 @@ In scope, but not yet sharp enough to ticket. Graduates as the frontier advances
   [02 — Measure what the existing item segmenter actually achieves](issues/02-measure-segmenter.md)
   reports whether item boundaries are reliable enough to chunk against. May graduate into
   one ticket or several.
-- **Whether reranking earns its keep on this corpus** (Q3). [04](issues/04-reranker-and-chunk-size.md)
-  built it and measured its cost (1.0s → 1.7s); whether it improves answers here is now
-  answerable only by [10](issues/10-smoke-eval-and-quality-notes.md). If it hurts, that is a
-  finding worth presenting — and the quota-on/quota-off shape of `entity_coverage@k` means the
-  comparison needs care.
+- **Why reranking hurts sector questions.** [10](issues/10-smoke-eval-and-quality-notes.md)
+  measured reranking as better on 8 questions and worse on 4 — and both material regressions are
+  sector questions (`sw-01`, `sw-02`), which name no company, so no quotas apply and a single
+  unfiltered search gives the reranker the most freedom. Whether that is the reranker, the lack
+  of a quota floor, or the three-question sample cannot be told apart at n=22.
 - **Per-risk-factor chunking for Item 1A** (Q4). Deferred by [04](issues/04-reranker-and-chunk-size.md):
   most of what it was buying — chunks starting at a semantic boundary — arrived with reflow, and
   §4.3 notes subcaption detection under-counts, so a mis-bounded chunk may be worse than a
@@ -209,10 +301,13 @@ In scope, but not yet sharp enough to ticket. Graduates as the frontier advances
   §229.103 permits it to point elsewhere. The cheap middle path is an `is_pointer: true`
   tag. Not yet clear whether any demo question needs it.
 - **Which generation model answers.** `config.py` pins `gpt-4.1`. Dated for an assessment
-  demoed in Aug 2026, and it is a one-line change — but it is a decision, and swapping it
-  invalidates the prompt tuning recorded in `PROMPT_LOG.md`, now at `prompt_version: v5`
-  (ticket 15 changed the passage label). Cannot be ticketed sharply until ticket 11 establishes
-  what the prompt history actually depends on.
+  demoed in Aug 2026, and it is a one-line change. [11](issues/11-prompt-iteration-log.md) has
+  now established what the prompt history depends on: six versions of tuning, three of them
+  measured against `gpt-4.1`'s specific failures — v3 exists because instruction adherence
+  degraded with distance from the end of the prompt, and v2 because the five-part contract "did
+  not take". A newer model might not need v3 at all, or might break v4's refusal. So this is a
+  decision plus a re-run of the 28-test gate, not a one-line change — and it is a fair question
+  for the panel rather than a defect.
 - **Near-duplicate suppression policy.** Prior art suppresses globally before top-k
   (`retrieve.py:159`), which `eval-harness-findings.md` §3 shows is anti-correlated with
   its own recall label. The suppression is probably right and the label wrong — but the

@@ -1,7 +1,7 @@
 # The walkthrough — design decisions, business value, and future state
 
 Type: prototype
-Status: open
+Status: resolved
 Blocked by: 12
 
 ## Question
@@ -99,3 +99,92 @@ This is a `prototype` ticket: draft something concrete and cheap — an outline 
 run-of-show — and react to it rather than trying to get the narrative right in the abstract.
 Rehearse the actual demo at least once, typing all three questions, because the panel types
 them and latency, layout and refusal behaviour all show live.
+
+---
+
+## Answer
+
+**Resolved 2026-08-20.** The deliverable is **`docs/WALKTHROUGH.md`** — a run-of-show plus the
+three arguments the brief asks for, with every number in it fact-checked against the running
+system, and rehearsed on all three panel questions.
+
+### Structure
+
+Six beats, ~20 minutes plus questions:
+
+1. **Frame it in their language** — not architecture. Open on the failure a PE analyst fears: a
+   confident, well-written, wrong number.
+2. **Let them drive.** The panel types; point at three things on screen (verified citation count,
+   provenance line, evidence base) and read *Gaps and confidence* aloud.
+3. **Break it on purpose** — the Shopify refusal, with what it used to do: refuse correctly and
+   then write findings for nine other companies, including Bank of America's China exposure.
+4. **Design decisions through measurements** — four numbers that carry the whole argument.
+5. **Value creation** — three wrong answers an analyst would have *acted on*, each mapped to the
+   mechanism that stops it.
+6. **Future state**, split in two because the halves land with different people in the room.
+
+### Future state is split, and the user's own list leads
+
+`docs/future-state.md` was already written and is **product-facing**, which is the half a client
+cares about. It leads:
+
+- **inline citations that link back into the filing** — every chunk already carries its source
+  file and section, and every filing header carries its SEC URL, so this is the
+  highest-value/lowest-risk next item: a citation you have to trust becomes one you can click;
+- **a screen to manage CIKs and date ranges** — turning a fixed snapshot into a product;
+- **logging queries to build the eval set from real ones** — better test data than anything
+  invented, and free once queries are logged;
+- **streaming**, with the note that the current single JSON response is deliberate (citations
+  arrive with the text), so the citation channel has to be designed alongside it.
+
+The engineering half follows: the XBRL numeric router with its honest caveats, the eval harness
+`docs/EVALUATION.md` explains how to make credible, self-hosted embeddings with the one real
+privacy angle (*the filings are public; the queries encode the firm's deal interests*), and
+multi-tenancy needing `tenant_id` from day one.
+
+### The re-index answer, scripted
+
+A client will ask "so we never rebuild the index?" The walkthrough scripts the honest version,
+because saying yes would be wrong: a payload absorbs filters, display fields, grouping and
+entitlements for free; it does **not** absorb better chunking, a new embedding model, a changed
+prefix or fixed preprocessing. What helps is raw text with offsets plus an alias in front of the
+collection — and a full re-embed here is **~$0.40 and fifteen minutes**, which is the real reason
+not to over-engineer around avoiding it.
+
+### Rehearsed, and the rehearsal changed the script
+
+All three panel questions run end to end: **5/5 required sections, citations verified, 12–22
+seconds.** Two things the rehearsal caught that the draft had wrong:
+
+**Quoting exact coverage numbers would have set up a live contradiction.** The draft coached
+"JNJ 3 of 17 filings, PFE 3 of 15" — a rehearsal returned `JNJ 4 of 17, PFE 1 of 15` on the same
+question. Which filings win varies between runs. The walkthrough now says **read the numbers off
+the screen** and coaches the *shape* instead: two companies with real coverage, `1 of 1` for the
+rest. A remembered number the screen contradicts is a small, avoidable credibility hit.
+
+**Twenty seconds of silence needs narrating.** Latency is 12–22s, mostly generation. Better to
+say "that's one call producing the whole structured answer" than to let it sit.
+
+### A "things not to say" list
+
+Because several plausible claims are false, and each was measured to be:
+
+- "We never have to re-index."
+- "Qdrant is the only OSS store with native hybrid fusion" — Weaviate, Milvus, Elasticsearch,
+  Vespa and OpenSearch all do it.
+- "`jina-reranker-v1-turbo-en` gives us 8192-token context" — its card says so; measured, it
+  truncates at 512 like the rest.
+- "The reranker reads the whole passage" — it sees the first 512 tokens; 26.8% of indexed text
+  does not influence ranking.
+- Any claim that the ablation is statistically significant. n=22, directional, win/loss/tie.
+
+Also prepared: an answer to **"your recall looks low"** (the best question they can ask), and to
+**"what would you do differently"** — measure the corpus before writing any pipeline, since
+several inherited decisions were defensible in the abstract and wrong here.
+
+### Verification
+
+Every asserted figure was checked against the running system: index at **30,383 chunks**,
+`|R|` spanning **1–36**, `recall@10 = 0.513` and normalised **62%** (the draft said 0.52 and
+64%, which were the k=2 figures — corrected), `grep -r openai frontend/` returning nothing, and
+prompt **v7**. All README and walkthrough links resolve. 201 free python + 34 frontend green.

@@ -9,6 +9,7 @@ import {
   IconGavel,
   IconLoader2,
   IconScale,
+  IconSearchOff,
   IconTrendingUp,
 } from "@tabler/icons-react";
 import { useRef, useState } from "react";
@@ -18,8 +19,15 @@ import { useRef, useState } from "react";
 
 /**
  * Suggested prompts on the empty state. Each one is a deliberate demo case:
- * cross-company comparison, a temporal trend, and a sector-wide question — the
- * three shapes the retrieval path has to handle differently.
+ * cross-company comparison, a temporal trend, a sector-wide question — the three
+ * shapes the retrieval path has to handle differently — and one where the correct
+ * answer is a refusal.
+ *
+ * The last one is here on purpose. Shopify has no filings in this corpus, and the
+ * answer names it as absent and writes no findings for anyone else; before that
+ * rule existed the same question refused correctly and then produced cited
+ * findings for nine companies nobody asked about. Offering the failure case beside
+ * the flattering ones is the point.
  */
 const PROMPTS = [
   {
@@ -39,6 +47,11 @@ const PROMPTS = [
     text: "Regulatory risk",
     prompt:
       "What regulatory risks do the banks in this corpus disclose, and where do they overlap?",
+  },
+  {
+    icon: IconSearchOff,
+    text: "Out of corpus",
+    prompt: "What is Shopify's China exposure?",
   },
 ];
 
