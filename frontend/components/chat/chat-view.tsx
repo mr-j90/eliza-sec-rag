@@ -14,14 +14,14 @@ import { ThinkingIndicator } from "./thinking-indicator";
 export function ChatView({
   conversationId,
   initialMessages,
-  modelLabel,
+  backendAvailable,
 }: {
   /** Null for a new chat — /api/chat mints the id on the first message. */
   conversationId: string | null;
   /** Transcript loaded from SQLite; empty for a new chat. */
   initialMessages: ChatMessage[];
-  /** Model name to show in the composer. Fixed server-side; display only. */
-  modelLabel: string;
+  /** Whether the backend answered /health; false shows a composer warning. */
+  backendAvailable: boolean;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
@@ -109,7 +109,7 @@ export function ChatView({
         </h1>
         <AiComposer
           onSend={send}
-          modelLabel={modelLabel}
+          backendAvailable={backendAvailable}
           disabled={awaiting}
           showPrompts
         />
@@ -119,12 +119,10 @@ export function ChatView({
 
   return (
     <main className="mx-auto flex h-[calc(100vh-4rem)] w-full max-w-3xl flex-col px-6 pb-6">
-      <div className="flex items-center gap-2 border-b py-3">
-        <Flower2 className="size-4 text-primary" />
-        <span className="text-sm font-semibold">Assistant</span>
-      </div>
-
-      <div ref={scrollRef} className="flex-1 space-y-6 overflow-y-auto py-6">
+      <div
+        ref={scrollRef}
+        className="no-scrollbar flex-1 space-y-6 overflow-y-auto py-6"
+      >
         {messages.map((m, i) =>
           m.role === "user" ? (
             <div key={i} className="flex justify-end">
@@ -159,7 +157,7 @@ export function ChatView({
 
       <AiComposer
         onSend={send}
-        modelLabel={modelLabel}
+        backendAvailable={backendAvailable}
         disabled={awaiting}
       />
     </main>

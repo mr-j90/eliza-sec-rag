@@ -26,6 +26,23 @@ function citedIds(answer: string): string[] {
   return [...seen];
 }
 
+/**
+ * What period this passage is from.
+ *
+ * The period end, not a bare `FY2025`. For the 18 of 54 issuers in this corpus whose fiscal
+ * year does not end in December, the two disagree: NVIDIA calls the quarter ending
+ * 2025-10-26 "fiscal year 2026", so the old label sat directly above an excerpt naming a
+ * different year — the kind of contradiction a reader spots immediately and that then puts
+ * every other figure on screen in doubt.
+ *
+ * A date is a fact and cannot contradict the passage. Falls back to the year for the one
+ * filing whose period end is not recoverable.
+ */
+function periodLabel(citation: Citation): string {
+  if (!citation.period_end) return `FY${citation.fiscal_year}`;
+  return `period ending ${citation.period_end}`;
+}
+
 function Provenance({ citation }: { citation: Citation }) {
   return (
     <li className="text-xs">
@@ -35,7 +52,7 @@ function Provenance({ citation }: { citation: Citation }) {
         </span>
         <span className="font-medium">{citation.company}</span>
         <span className="text-muted-foreground">
-          {citation.form_type} FY{citation.fiscal_year} · {citation.section}
+          {citation.form_type} · {periodLabel(citation)} · {citation.section}
         </span>
       </div>
       <p className="mt-1 line-clamp-2 text-muted-foreground">{citation.excerpt}</p>

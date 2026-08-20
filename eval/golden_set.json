@@ -1,0 +1,631 @@
+{
+  "note": "Labels are derived from the corpus by eval/build_golden_set.py, never from retrieval output. Each answerable question records the probe term its source_files were matched on, so any label can be re-derived.",
+  "questions": [
+    {
+      "id": "sc-01",
+      "category": "single_company",
+      "question": "What does NVIDIA disclose about export controls on its products?",
+      "tickers": [
+        "NVDA"
+      ],
+      "probe": "export control",
+      "sections": [
+        "Item 1A \u2014 Risk Factors"
+      ],
+      "note": "US export restrictions on advanced GPUs are a core NVIDIA risk disclosure.",
+      "absent": [],
+      "source_files": [
+        "NVDA_10K_2022Q1_2022-03-18_full.txt",
+        "NVDA_10K_2023Q1_2023-02-24_full.txt",
+        "NVDA_10K_2024Q1_2024-02-21_full.txt",
+        "NVDA_10K_2025-02-26_full.txt",
+        "NVDA_10Q_2022Q2_2022-05-27_full.txt",
+        "NVDA_10Q_2022Q3_2022-08-31_full.txt",
+        "NVDA_10Q_2022Q4_2022-11-18_full.txt",
+        "NVDA_10Q_2023Q2_2023-05-26_full.txt",
+        "NVDA_10Q_2023Q3_2023-08-28_full.txt",
+        "NVDA_10Q_2023Q4_2023-11-21_full.txt",
+        "NVDA_10Q_2024Q2_2024-05-29_full.txt",
+        "NVDA_10Q_2024Q3_2024-08-28_full.txt",
+        "NVDA_10Q_2024Q4_2024-11-20_full.txt",
+        "NVDA_10Q_2025Q2_2025-05-28_full.txt",
+        "NVDA_10Q_2025Q3_2025-08-27_full.txt",
+        "NVDA_10Q_2025Q4_2025-11-19_full.txt"
+      ]
+    },
+    {
+      "id": "sc-02",
+      "category": "single_company",
+      "question": "What does Intel say about the CHIPS Act?",
+      "tickers": [
+        "INTC"
+      ],
+      "probe": "CHIPS Act",
+      "sections": [],
+      "note": "The probe appears in exactly one filing in the whole corpus, so the label is unusually precise.",
+      "absent": [],
+      "source_files": [
+        "INTC_10K_2026-01-23_full.txt"
+      ]
+    },
+    {
+      "id": "sc-03",
+      "category": "single_company",
+      "question": "What risks does Tesla disclose about Autopilot and self-driving features?",
+      "tickers": [
+        "TSLA"
+      ],
+      "probe": "Autopilot",
+      "sections": [
+        "Item 1A \u2014 Risk Factors"
+      ],
+      "note": "Autopilot is named in Tesla's product-liability and regulatory risk factors.",
+      "absent": [],
+      "source_files": [
+        "TSLA_10K_2022Q4_2023-01-31_full.txt",
+        "TSLA_10K_2023Q4_2024-01-29_full.txt",
+        "TSLA_10K_2024Q4_2025-01-30_full.txt",
+        "TSLA_10K_2026-01-29_full.txt",
+        "TSLA_10Q_2022Q1_2022-04-25_full.txt",
+        "TSLA_10Q_2022Q2_2022-07-25_full.txt",
+        "TSLA_10Q_2022Q3_2022-10-24_full.txt",
+        "TSLA_10Q_2023Q1_2023-04-24_full.txt",
+        "TSLA_10Q_2023Q2_2023-07-24_full.txt",
+        "TSLA_10Q_2023Q3_2023-10-23_full.txt",
+        "TSLA_10Q_2024Q1_2024-04-24_full.txt",
+        "TSLA_10Q_2024Q2_2024-07-24_full.txt",
+        "TSLA_10Q_2024Q3_2024-10-24_full.txt",
+        "TSLA_10Q_2025Q1_2025-04-23_full.txt",
+        "TSLA_10Q_2025Q2_2025-07-24_full.txt",
+        "TSLA_10Q_2025Q3_2025-10-23_full.txt"
+      ]
+    },
+    {
+      "id": "sc-04",
+      "category": "single_company",
+      "question": "How does Apple describe its dependence on outsourcing partners for manufacturing?",
+      "tickers": [
+        "AAPL"
+      ],
+      "probe": "outsourcing partners",
+      "sections": [
+        "Item 1A \u2014 Risk Factors"
+      ],
+      "note": "Apple's supply-chain concentration language uses this exact phrase.",
+      "absent": [],
+      "source_files": [
+        "AAPL_10K_2022Q3_2022-10-28_full.txt",
+        "AAPL_10K_2023Q3_2023-11-03_full.txt",
+        "AAPL_10K_2024Q3_2024-11-01_full.txt",
+        "AAPL_10K_2025-10-31_full.txt",
+        "AAPL_10Q_2022Q1_2022-04-29_full.txt",
+        "AAPL_10Q_2022Q2_2022-07-29_full.txt",
+        "AAPL_10Q_2022Q4_2023-02-03_full.txt",
+        "AAPL_10Q_2023Q2_2023-05-05_full.txt",
+        "AAPL_10Q_2023Q3_2023-08-04_full.txt",
+        "AAPL_10Q_2023Q4_2024-02-02_full.txt",
+        "AAPL_10Q_2024Q1_2024-05-03_full.txt",
+        "AAPL_10Q_2024Q2_2024-08-02_full.txt",
+        "AAPL_10Q_2024Q4_2025-01-31_full.txt",
+        "AAPL_10Q_2025Q1_2025-05-02_full.txt",
+        "AAPL_10Q_2025Q2_2025-08-01_full.txt",
+        "AAPL_10Q_2025Q4_2026-01-30_full.txt"
+      ]
+    },
+    {
+      "id": "sc-05",
+      "category": "single_company",
+      "question": "What does Boeing disclose about the 737 MAX?",
+      "tickers": [
+        "BA"
+      ],
+      "probe": "737 MAX",
+      "sections": [],
+      "note": "A named product with a specific identifier \u2014 the kind of term BM25 should win on.",
+      "absent": [],
+      "source_files": [
+        "BA_10K_2026-01-30_full.txt"
+      ]
+    },
+    {
+      "id": "sc-06",
+      "category": "single_company",
+      "question": "What does Berkshire Hathaway say about its insurance float?",
+      "tickers": [
+        "BRK"
+      ],
+      "probe": "float",
+      "sections": [],
+      "note": "Deliberately harder: 'float' is a common word, so the label is broad and precision will suffer.",
+      "absent": [],
+      "source_files": [
+        "BRK_10K_2025-02-24_full.txt"
+      ]
+    },
+    {
+      "id": "cc-01",
+      "category": "cross_company",
+      "question": "What are the primary risk factors facing Apple, Tesla, and JPMorgan, and how do they compare?",
+      "tickers": [
+        "AAPL",
+        "TSLA",
+        "JPM"
+      ],
+      "probe": "risk factors",
+      "sections": [
+        "Item 1A \u2014 Risk Factors",
+        "Part II Item 1A \u2014 Risk Factors"
+      ],
+      "note": "Stated verbatim in the assessment brief. The canonical entity-quota case.",
+      "absent": [],
+      "source_files": [
+        "AAPL_10K_2022Q3_2022-10-28_full.txt",
+        "AAPL_10K_2023Q3_2023-11-03_full.txt",
+        "AAPL_10K_2024Q3_2024-11-01_full.txt",
+        "AAPL_10K_2025-10-31_full.txt",
+        "AAPL_10Q_2022Q1_2022-04-29_full.txt",
+        "AAPL_10Q_2022Q2_2022-07-29_full.txt",
+        "AAPL_10Q_2022Q4_2023-02-03_full.txt",
+        "AAPL_10Q_2023Q2_2023-05-05_full.txt",
+        "AAPL_10Q_2023Q3_2023-08-04_full.txt",
+        "AAPL_10Q_2023Q4_2024-02-02_full.txt",
+        "AAPL_10Q_2024Q1_2024-05-03_full.txt",
+        "AAPL_10Q_2024Q2_2024-08-02_full.txt",
+        "AAPL_10Q_2024Q4_2025-01-31_full.txt",
+        "AAPL_10Q_2025Q1_2025-05-02_full.txt",
+        "AAPL_10Q_2025Q2_2025-08-01_full.txt",
+        "AAPL_10Q_2025Q4_2026-01-30_full.txt",
+        "JPM_10K_2026-02-13_full.txt",
+        "JPM_10Q_2025Q1_2025-05-01_full.txt",
+        "JPM_10Q_2025Q2_2025-08-05_full.txt",
+        "JPM_10Q_2025Q3_2025-11-04_full.txt",
+        "TSLA_10K_2022Q4_2023-01-31_full.txt",
+        "TSLA_10K_2023Q4_2024-01-29_full.txt",
+        "TSLA_10K_2024Q4_2025-01-30_full.txt",
+        "TSLA_10K_2026-01-29_full.txt",
+        "TSLA_10Q_2022Q1_2022-04-25_full.txt",
+        "TSLA_10Q_2022Q2_2022-07-25_full.txt",
+        "TSLA_10Q_2022Q3_2022-10-24_full.txt",
+        "TSLA_10Q_2023Q1_2023-04-24_full.txt",
+        "TSLA_10Q_2023Q2_2023-07-24_full.txt",
+        "TSLA_10Q_2023Q3_2023-10-23_full.txt",
+        "TSLA_10Q_2024Q1_2024-04-24_full.txt",
+        "TSLA_10Q_2024Q2_2024-07-24_full.txt",
+        "TSLA_10Q_2024Q3_2024-10-24_full.txt",
+        "TSLA_10Q_2025Q1_2025-04-23_full.txt",
+        "TSLA_10Q_2025Q2_2025-07-24_full.txt",
+        "TSLA_10Q_2025Q3_2025-10-23_full.txt"
+      ]
+    },
+    {
+      "id": "cc-02",
+      "category": "cross_company",
+      "question": "How do Goldman Sachs and JPMorgan describe their Basel III capital requirements?",
+      "tickers": [
+        "GS",
+        "JPM"
+      ],
+      "probe": "Basel III",
+      "sections": [],
+      "note": "A regulatory term specific to large banks; narrow probe, two named issuers.",
+      "absent": [],
+      "source_files": [
+        "GS_10K_2025-02-27_full.txt",
+        "JPM_10K_2026-02-13_full.txt",
+        "JPM_10Q_2025Q1_2025-05-01_full.txt",
+        "JPM_10Q_2025Q2_2025-08-05_full.txt",
+        "JPM_10Q_2025Q3_2025-11-04_full.txt"
+      ]
+    },
+    {
+      "id": "cc-03",
+      "category": "cross_company",
+      "question": "Compare how Microsoft and Amazon describe competition in cloud services.",
+      "tickers": [
+        "MSFT",
+        "AMZN"
+      ],
+      "probe": "cloud",
+      "sections": [],
+      "note": "Both are cloud incumbents; a broad probe, so recall matters more than precision here.",
+      "absent": [],
+      "source_files": [
+        "AMZN_10K_2022Q4_2023-02-03_full.txt",
+        "AMZN_10K_2023Q4_2024-02-02_full.txt",
+        "AMZN_10K_2024Q4_2025-02-07_full.txt",
+        "AMZN_10K_2026-02-06_full.txt",
+        "AMZN_10Q_2022Q1_2022-04-29_full.txt",
+        "AMZN_10Q_2022Q2_2022-07-29_full.txt",
+        "AMZN_10Q_2022Q3_2022-10-28_full.txt",
+        "AMZN_10Q_2023Q1_2023-04-28_full.txt",
+        "AMZN_10Q_2023Q2_2023-08-04_full.txt",
+        "AMZN_10Q_2023Q3_2023-10-27_full.txt",
+        "AMZN_10Q_2024Q1_2024-05-01_full.txt",
+        "AMZN_10Q_2024Q2_2024-08-02_full.txt",
+        "AMZN_10Q_2024Q3_2024-11-01_full.txt",
+        "AMZN_10Q_2025Q1_2025-05-02_full.txt",
+        "AMZN_10Q_2025Q2_2025-08-01_full.txt",
+        "AMZN_10Q_2025Q3_2025-10-31_full.txt",
+        "MSFT_10K_2022Q2_2022-07-28_full.txt",
+        "MSFT_10K_2023Q2_2023-07-27_full.txt",
+        "MSFT_10K_2024Q2_2024-07-30_full.txt",
+        "MSFT_10K_2025-07-30_full.txt",
+        "MSFT_10Q_2022Q1_2022-04-26_full.txt",
+        "MSFT_10Q_2022Q3_2022-10-25_full.txt",
+        "MSFT_10Q_2022Q4_2023-01-24_full.txt",
+        "MSFT_10Q_2023Q1_2023-04-25_full.txt",
+        "MSFT_10Q_2023Q3_2023-10-24_full.txt",
+        "MSFT_10Q_2023Q4_2024-01-30_full.txt",
+        "MSFT_10Q_2024Q1_2024-04-25_full.txt",
+        "MSFT_10Q_2024Q3_2024-10-30_full.txt",
+        "MSFT_10Q_2024Q4_2025-01-29_full.txt",
+        "MSFT_10Q_2025Q1_2025-04-30_full.txt",
+        "MSFT_10Q_2025Q3_2025-10-29_full.txt",
+        "MSFT_10Q_2025Q4_2026-01-28_full.txt"
+      ]
+    },
+    {
+      "id": "cc-04",
+      "category": "cross_company",
+      "question": "How do Pfizer and Merck describe patent expiration risk?",
+      "tickers": [
+        "PFE",
+        "MRK"
+      ],
+      "probe": "patent",
+      "sections": [
+        "Item 1A \u2014 Risk Factors"
+      ],
+      "note": "Loss of exclusivity is the central pharma risk; both issuers disclose it.",
+      "absent": [],
+      "source_files": [
+        "MRK_10K_2025-02-25_full.txt",
+        "PFE_10K_2022Q4_2023-02-23_full.txt",
+        "PFE_10K_2023Q4_2024-02-22_full.txt",
+        "PFE_10K_2025-02-27_full.txt",
+        "PFE_10Q_2022Q2_2022-05-11_full.txt",
+        "PFE_10Q_2022Q3_2022-08-10_full.txt",
+        "PFE_10Q_2022Q4_2022-11-09_full.txt",
+        "PFE_10Q_2023Q2_2023-05-10_full.txt",
+        "PFE_10Q_2023Q3_2023-08-09_full.txt",
+        "PFE_10Q_2023Q4_2023-11-08_full.txt",
+        "PFE_10Q_2024Q1_2024-05-08_full.txt",
+        "PFE_10Q_2024Q2_2024-08-05_full.txt",
+        "PFE_10Q_2024Q3_2024-11-04_full.txt",
+        "PFE_10Q_2025Q1_2025-05-05_full.txt",
+        "PFE_10Q_2025Q2_2025-08-05_full.txt",
+        "PFE_10Q_2025Q3_2025-11-04_full.txt"
+      ]
+    },
+    {
+      "id": "cc-05",
+      "category": "cross_company",
+      "question": "Compare what Walmart and Costco disclose about supply chain disruption.",
+      "tickers": [
+        "WMT",
+        "COST"
+      ],
+      "probe": "supply chain",
+      "sections": [],
+      "note": "Two retailers, same topic \u2014 tests whether quotas keep both represented.",
+      "absent": [],
+      "source_files": [
+        "COST_10K_2025-10-08_full.txt",
+        "WMT_10K_2025-03-14_full.txt"
+      ]
+    },
+    {
+      "id": "cc-06",
+      "category": "cross_company",
+      "question": "How do Visa and Mastercard describe interchange fee regulation?",
+      "tickers": [
+        "V",
+        "MA"
+      ],
+      "probe": "interchange",
+      "sections": [],
+      "note": "Also exercises short-ticker extraction: V must resolve to Visa.",
+      "absent": [],
+      "source_files": [
+        "MA_10K_2026-02-11_full.txt",
+        "V_10K_2025-11-06_full.txt"
+      ]
+    },
+    {
+      "id": "cc-07",
+      "category": "cross_company",
+      "question": "Compare the climate-related risks disclosed by Exxon Mobil and Chevron.",
+      "tickers": [
+        "XOM",
+        "CVX"
+      ],
+      "probe": "climate",
+      "sections": [
+        "Item 1A \u2014 Risk Factors"
+      ],
+      "note": "Both majors disclose transition and physical climate risk.",
+      "absent": [],
+      "source_files": [
+        "CVX_10K_2025-02-21_full.txt",
+        "XOM_10K_2022Q4_2023-02-22_full.txt",
+        "XOM_10K_2023Q4_2024-02-28_full.txt",
+        "XOM_10K_2024Q4_2025-02-19_full.txt",
+        "XOM_10K_2026-02-18_full.txt",
+        "XOM_10Q_2023Q2_2023-08-01_full.txt",
+        "XOM_10Q_2023Q3_2023-10-31_full.txt",
+        "XOM_10Q_2024Q1_2024-04-29_full.txt",
+        "XOM_10Q_2024Q2_2024-08-05_full.txt",
+        "XOM_10Q_2024Q3_2024-11-04_full.txt",
+        "XOM_10Q_2025Q1_2025-05-05_full.txt",
+        "XOM_10Q_2025Q2_2025-08-04_full.txt",
+        "XOM_10Q_2025Q3_2025-11-03_full.txt"
+      ]
+    },
+    {
+      "id": "cc-08",
+      "category": "cross_company",
+      "question": "How do Lockheed Martin and RTX describe dependence on US government contracts?",
+      "tickers": [
+        "LMT",
+        "RTX"
+      ],
+      "probe": "U.S. Government",
+      "sections": [
+        "Item 1A \u2014 Risk Factors"
+      ],
+      "note": "Defence primes; concentration of a single customer is the shared risk.",
+      "absent": [],
+      "source_files": [
+        "LMT_10K_2026-01-29_full.txt",
+        "RTX_10K_2026-02-06_full.txt"
+      ]
+    },
+    {
+      "id": "tm-01",
+      "expect_fiscal_years": [
+        2025,
+        2026
+      ],
+      "category": "temporal",
+      "question": "How has NVIDIA's revenue and growth outlook changed over the last two years?",
+      "tickers": [
+        "NVDA"
+      ],
+      "probe": "revenue",
+      "sections": [
+        "Item 7 \u2014 Management's Discussion and Analysis"
+      ],
+      "note": "Stated verbatim in the assessment brief. Relevance legitimately spans several filings and periods, which a single-file label describes badly \u2014 flagged in G02.",
+      "absent": [],
+      "source_files": [
+        "NVDA_10K_2025-02-26_full.txt",
+        "NVDA_10Q_2025Q2_2025-05-28_full.txt",
+        "NVDA_10Q_2025Q3_2025-08-27_full.txt",
+        "NVDA_10Q_2025Q4_2025-11-19_full.txt"
+      ]
+    },
+    {
+      "id": "tm-02",
+      "expect_fiscal_years": [
+        2023,
+        2026
+      ],
+      "category": "temporal",
+      "question": "How has Tesla's vehicle delivery guidance changed since 2023?",
+      "tickers": [
+        "TSLA"
+      ],
+      "probe": "deliveries",
+      "sections": [
+        "Item 7 \u2014 Management's Discussion and Analysis",
+        "Item 2 \u2014 Management's Discussion and Analysis"
+      ],
+      "note": "Requires the time filter to select the right fiscal years.",
+      "absent": [],
+      "source_files": [
+        "TSLA_10K_2023Q4_2024-01-29_full.txt",
+        "TSLA_10K_2024Q4_2025-01-30_full.txt",
+        "TSLA_10K_2026-01-29_full.txt",
+        "TSLA_10Q_2023Q1_2023-04-24_full.txt",
+        "TSLA_10Q_2023Q2_2023-07-24_full.txt",
+        "TSLA_10Q_2023Q3_2023-10-23_full.txt",
+        "TSLA_10Q_2024Q1_2024-04-24_full.txt",
+        "TSLA_10Q_2024Q2_2024-07-24_full.txt",
+        "TSLA_10Q_2024Q3_2024-10-24_full.txt",
+        "TSLA_10Q_2025Q1_2025-04-23_full.txt",
+        "TSLA_10Q_2025Q2_2025-07-24_full.txt",
+        "TSLA_10Q_2025Q3_2025-10-23_full.txt"
+      ]
+    },
+    {
+      "id": "tm-03",
+      "expect_fiscal_years": [
+        2024,
+        2026
+      ],
+      "category": "temporal",
+      "question": "How has Intel's capital expenditure plan evolved over the last three years?",
+      "tickers": [
+        "INTC"
+      ],
+      "probe": "capital expenditure",
+      "sections": [],
+      "note": "Foundry build-out spans several filings; a trend question over MD&A.",
+      "absent": [],
+      "source_files": [
+        "INTC_10K_2026-01-23_full.txt"
+      ]
+    },
+    {
+      "id": "tm-04",
+      "expect_fiscal_years": [
+        2025,
+        2025
+      ],
+      "category": "temporal",
+      "question": "What did Disney report about streaming subscriber trends in its recent quarterly filings?",
+      "tickers": [
+        "DIS"
+      ],
+      "probe": "subscriber",
+      "sections": [
+        "Item 2 \u2014 Management's Discussion and Analysis"
+      ],
+      "note": "Tests the form hint: 'quarterly' must select 10-Q. Window is FY2025 because that is Disney's newest fiscal year \u2014 its FY2025 Q4 10-Q was *filed* 2026-02-02, so the corpus-wide newest year (2026) is the wrong window for this issuer. Originally phrased 'most recent quarter', reworded because a single newest filing is not expressible as a year window and the label must stay derivable. The underlying gap \u2014 recency is company-specific, and src/query.py resolves it corpus-wide \u2014 is recorded as a finding rather than papered over here.",
+      "absent": [],
+      "source_files": [
+        "DIS_10K_2025-11-13_full.txt",
+        "DIS_10Q_2025Q1_2025-05-07_full.txt",
+        "DIS_10Q_2025Q2_2025-08-06_full.txt",
+        "DIS_10Q_2025Q4_2026-02-02_full.txt"
+      ]
+    },
+    {
+      "id": "tm-05",
+      "expect_fiscal_years": [
+        2022,
+        2026
+      ],
+      "category": "temporal",
+      "question": "How has Boeing's commercial aircraft delivery outlook shifted since 2022?",
+      "tickers": [
+        "BA"
+      ],
+      "probe": "deliveries",
+      "sections": [],
+      "note": "Multi-year trend for an issuer with a disrupted delivery history.",
+      "absent": [],
+      "source_files": [
+        "BA_10K_2026-01-30_full.txt"
+      ]
+    },
+    {
+      "id": "sw-01",
+      "category": "sector",
+      "question": "What regulatory risks do the major pharmaceutical companies face, and how are they addressing them?",
+      "tickers": [],
+      "probe": "drug pricing",
+      "sections": [
+        "Item 1A \u2014 Risk Factors"
+      ],
+      "note": "Stated verbatim in the assessment brief. Names no company, so retrieval must find the sector unaided \u2014 measured at I004 to already work without filters.",
+      "absent": [],
+      "source_files": [
+        "ABBV_10K_2025-02-14_full.txt",
+        "JNJ_10K_2022Q1_2022-02-17_full.txt",
+        "JNJ_10K_2023Q1_2023-02-16_full.txt",
+        "JNJ_10K_2023Q4_2024-02-16_full.txt",
+        "JNJ_10K_2024Q4_2025-02-13_full.txt",
+        "JNJ_10K_2026-02-11_full.txt",
+        "JNJ_10Q_2022Q2_2022-04-29_full.txt",
+        "JNJ_10Q_2022Q3_2022-07-29_full.txt",
+        "JNJ_10Q_2022Q4_2022-10-27_full.txt",
+        "JNJ_10Q_2023Q2_2023-04-28_full.txt",
+        "JNJ_10Q_2023Q3_2023-07-31_full.txt",
+        "JNJ_10Q_2023Q4_2023-10-27_full.txt",
+        "JNJ_10Q_2024Q1_2024-05-01_full.txt",
+        "JNJ_10Q_2024Q2_2024-07-25_full.txt",
+        "JNJ_10Q_2024Q3_2024-10-23_full.txt",
+        "JNJ_10Q_2025Q1_2025-04-23_full.txt",
+        "JNJ_10Q_2025Q2_2025-07-24_full.txt",
+        "JNJ_10Q_2025Q3_2025-10-22_full.txt",
+        "LLY_10K_2026-02-12_full.txt",
+        "PFE_10K_2022Q4_2023-02-23_full.txt",
+        "PFE_10K_2023Q4_2024-02-22_full.txt",
+        "PFE_10K_2025-02-27_full.txt",
+        "PFE_10Q_2022Q4_2022-11-09_full.txt",
+        "PFE_10Q_2023Q2_2023-05-10_full.txt",
+        "PFE_10Q_2023Q3_2023-08-09_full.txt",
+        "PFE_10Q_2023Q4_2023-11-08_full.txt",
+        "PFE_10Q_2024Q1_2024-05-08_full.txt",
+        "PFE_10Q_2024Q2_2024-08-05_full.txt",
+        "PFE_10Q_2024Q3_2024-11-04_full.txt",
+        "PFE_10Q_2025Q1_2025-05-05_full.txt",
+        "PFE_10Q_2025Q2_2025-08-05_full.txt",
+        "PFE_10Q_2025Q3_2025-11-04_full.txt"
+      ]
+    },
+    {
+      "id": "sw-02",
+      "category": "sector",
+      "question": "What do large US banks disclose about expected credit loss provisioning?",
+      "tickers": [],
+      "probe": "CECL",
+      "sections": [],
+      "note": "Narrowed from 'allowance for credit losses' (111 files) to the CECL acronym (12, all financials). A probe matching 45% of the corpus makes recall structurally tiny and measures nothing. SPEC \u00a75.1 names CECL as exactly the kind of identifier BM25 should win on, which makes it a useful ablation discriminator too.",
+      "absent": [],
+      "source_files": [
+        "AXP_10K_2026-02-06_full.txt",
+        "BAC_10K_2025-02-25_full.txt",
+        "BAC_10Q_2025Q1_2025-04-30_full.txt",
+        "BAC_10Q_2025Q2_2025-07-31_full.txt",
+        "BAC_10Q_2025Q3_2025-10-31_full.txt",
+        "CRM_10K_2025-03-05_full.txt",
+        "GS_10K_2025-02-27_full.txt",
+        "JPM_10K_2026-02-13_full.txt",
+        "JPM_10Q_2025Q1_2025-05-01_full.txt",
+        "JPM_10Q_2025Q2_2025-08-05_full.txt",
+        "JPM_10Q_2025Q3_2025-11-04_full.txt",
+        "MS_10K_2026-02-19_full.txt"
+      ]
+    },
+    {
+      "id": "sw-03",
+      "category": "sector",
+      "question": "What do semiconductor and technology companies disclose about power consumption in their operations?",
+      "tickers": [],
+      "probe": "power consumption",
+      "sections": [],
+      "note": "Narrowed from 'data center' (89 files) to 'power consumption' (6, all semiconductor issuers). Sector breadth is still tested \u2014 retrieval must find them with no company named \u2014 without labelling a third of the corpus relevant.",
+      "absent": [],
+      "source_files": [
+        "AMD_10K_2026-02-04_full.txt",
+        "INTC_10K_2026-01-23_full.txt",
+        "NVDA_10K_2022Q1_2022-03-18_full.txt",
+        "NVDA_10K_2023Q1_2023-02-24_full.txt",
+        "NVDA_10K_2024Q1_2024-02-21_full.txt",
+        "NVDA_10K_2025-02-26_full.txt"
+      ]
+    },
+    {
+      "id": "un-01",
+      "category": "unanswerable",
+      "question": "What is Shopify's China exposure?",
+      "tickers": [],
+      "probe": null,
+      "sections": [],
+      "absent": [
+        "Shopify"
+      ],
+      "note": "SPEC \u00a77.1's example. Shopify has no filings in this corpus.",
+      "source_files": []
+    },
+    {
+      "id": "un-02",
+      "category": "unanswerable",
+      "question": "What does Ferrari disclose about supply chain risk?",
+      "tickers": [],
+      "probe": null,
+      "sections": [],
+      "absent": [
+        "Ferrari"
+      ],
+      "note": "A real issuer, absent here \u2014 the answer must refuse rather than substitute a peer.",
+      "source_files": []
+    },
+    {
+      "id": "un-03",
+      "category": "unanswerable",
+      "question": "Compare the regulatory risks disclosed by Spotify and Rivian.",
+      "tickers": [],
+      "probe": null,
+      "sections": [],
+      "absent": [
+        "Spotify",
+        "Rivian"
+      ],
+      "note": "Two absent companies, so the refusal must name both rather than one.",
+      "source_files": []
+    }
+  ]
+}

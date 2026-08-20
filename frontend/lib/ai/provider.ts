@@ -25,6 +25,16 @@ export type Citation = {
   company: string;
   form_type: string;
   fiscal_year: number;
+  /**
+   * The period the filing reports on, e.g. "2025-10-26". Displayed in place of a bare
+   * "FY2025", because for the 18 of 54 issuers in this corpus whose fiscal year does not
+   * end in December the two disagree — NVIDIA calls the quarter ending 2025-10-26 "fiscal
+   * year 2026", so a citation labelled FY2025 sat directly above an excerpt saying
+   * otherwise. `fiscal_year` is kept because it is what the year filter runs on.
+   *
+   * Empty string for the one filing whose period end is not recoverable from its header.
+   */
+  period_end: string;
   section: string;
   source_file: string;
   excerpt: string;

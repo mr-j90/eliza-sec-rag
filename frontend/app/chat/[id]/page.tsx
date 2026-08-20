@@ -26,7 +26,7 @@ export default async function ConversationPage({
       key={conversation.id}
       conversationId={conversation.id}
       initialMessages={conversation.messages}
-      modelLabel={health?.generationModel ?? "backend unavailable"}
+      backendAvailable={health !== null}
     />
   );
 }

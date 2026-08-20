@@ -9,14 +9,13 @@ import { requireAuth } from "@/lib/auth";
  */
 export default async function NewChatPage() {
   await requireAuth();
-  // The model comes from the backend that would answer, not from local config —
-  // a label naming a model that didn't answer is worse than saying nothing.
+  // Asked so the composer can warn up front when the backend is unreachable.
   const health = await backendHealth();
   return (
     <ChatView
       conversationId={null}
       initialMessages={[]}
-      modelLabel={health?.generationModel ?? "backend unavailable"}
+      backendAvailable={health !== null}
     />
   );
 }

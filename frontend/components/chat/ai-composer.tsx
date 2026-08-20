@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
+  IconAlertTriangle,
   IconArrowUp,
   IconGavel,
   IconLoader2,
   IconScale,
-  IconSparkles,
   IconTrendingUp,
 } from "@tabler/icons-react";
 import { useRef, useState } from "react";
@@ -44,17 +44,19 @@ const PROMPTS = [
 
 export function AiComposer({
   onSend,
-  modelLabel,
+  backendAvailable,
   disabled = false,
   showPrompts = false,
 }: {
   /** Called with the message text. */
   onSend: (text: string) => void;
   /**
-   * Model name shown beside the composer. Display only — the model is fixed
-   * server-side, so this is passed down rather than chosen here.
+   * Whether the RAG backend answered /health. False puts a warning in the
+   * footer, so an unreachable backend is visible before a question is typed
+   * rather than after it's sent. The model name is deliberately not shown:
+   * it's fixed server-side and not actionable here.
    */
-  modelLabel: string;
+  backendAvailable: boolean;
   /** Disables sending (e.g. while a response is streaming). */
   disabled?: boolean;
   /** Show the suggested-prompt pills under the composer (empty state). */
@@ -96,11 +98,12 @@ export function AiComposer({
         </div>
 
         <div className="flex min-h-[40px] items-center gap-2 p-2 pb-1">
-          <div className="flex aspect-1 items-center gap-1 rounded-full bg-muted p-1.5 text-xs">
-            <IconSparkles className="h-4 w-4 text-muted-foreground" />
-          </div>
-
-          <span className="text-sm text-muted-foreground">{modelLabel}</span>
+          {!backendAvailable && (
+            <span className="flex items-center gap-1.5 text-sm text-warning">
+              <IconAlertTriangle className="h-4 w-4" />
+              Backend unavailable
+            </span>
+          )}
 
           <div className="ml-auto flex items-center gap-3">
             <Button

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# The corpus is 81 MB of public-domain SEC filings, redownloadable from the
+# source in the brief. It is not source, and it is too large to commit.
+edgar_corpus/
+
+# Eval output is regenerated; the golden set itself is committed.
+eval/results/
+
+# macOS
+.DS_Store

@@ -1,0 +1,172 @@
+{
+  "_README": [
+    "The fixture corpus, as a manifest rather than copies.",
+    "",
+    "Each entry names one filing, why it earns a place, and a measured claim that",
+    "test_fixtures.py asserts. If a claim stops holding, the pathology moved and every",
+    "ticket reasoning from it needs rechecking - that is the point of verifying them.",
+    "",
+    "WHY A MANIFEST AND NOT COPIED FILES:",
+    "1. Truncating is unsafe. ingest.py's _LATE_DETECTION guard is a *fraction* of body",
+    "   length (0.9), so shortening a file changes whether header detection counts as",
+    "   'late' - a truncated fixture can segment differently from the real filing and",
+    "   quietly mislead ticket 02.",
+    "2. Copying whole files means ~6.4 MB of duplicated public-domain text that is",
+    "   already on disk, in a repo where edgar_corpus/ is gitignored precisely because",
+    "   the brief links it for redownload.",
+    "3. The suite already requires the corpus. 21 of the 64 free-tier tests read it, and",
+    "   test_smoke.py::test_corpus_is_present asserts it. A manifest matches how the",
+    "   suite already works instead of inventing a second source of truth.",
+    "",
+    "Section refs point into docs/research/sec-rag-architecture.md."
+  ],
+  "fixtures": [
+    {
+      "file": "BAC_10K_2025-02-25_full.txt",
+      "why": "Largest inline-XBRL residue in the corpus - 86,721 tokens on a single line (\u00a72.3). At 800 tokens/chunk this alone would emit ~108 chunks of pure tag soup.",
+      "tickets": [
+        "03"
+      ],
+      "claims": {
+        "longest_line_at_least": 285080,
+        "body_chars_at_least": 1200000
+      }
+    },
+    {
+      "file": "TSLA_10K_2026-01-29_full.txt",
+      "why": "ALL-CAPS item headers, form C (\u00a72.5). Tesla is also the \u00a72.4 exemplar for a whole Item 1A on one line.",
+      "tickets": [
+        "02",
+        "03"
+      ],
+      "claims": {
+        "matches_regex": "ITEM\\s+1A\\.?\\s+RISK FACTORS",
+        "longest_line_at_least": 100000
+      }
+    },
+    {
+      "file": "AAPL_10K_2025-10-31_full.txt",
+      "why": "Item headers glued behind page furniture, form B (\u00a72.5). Also one of the 54 filings with NO 'Report Period' header, so it exercises the fiscal-year fallback - and it is an off-calendar (September) filer.",
+      "tickets": [
+        "02",
+        "15"
+      ],
+      "claims": {
+        "header_field_absent": "report period",
+        "longest_line_at_least": 95000
+      }
+    },
+    {
+      "file": "GOOG_10Q_2025Q3_2025-10-30_full.txt",
+      "why": "Zero-space item headers COMBINED with ALL CAPS - 'ITEM 6.E' (\u00a72.5 forms C and D at once, which is harder than either alone). Measured: the arch doc's zero-space example is from a 10-Q, not the 10-K - GOOG's 10-K writes 'Item 9A.' with normal spacing, so picking the 10-K tests nothing. Corpus ticker is GOOG, not GOOGL.",
+      "tickets": [
+        "02"
+      ],
+      "claims": {
+        "matches_regex": "ITEM\\s*[0-9]+A?\\.[A-Z]"
+      }
+    },
+    {
+      "file": "META_10K_2026-01-29_full.txt",
+      "why": "Second zero-space filer and an independent check that form D is not a Google-only quirk - Meta writes it mixed-case ('Item 9A.C') where GOOG writes it in caps, so the two fixtures cover both casings of the same defect.",
+      "tickets": [
+        "02"
+      ],
+      "claims": {
+        "matches_regex": "Item\\s*[0-9]+A?\\.[A-Z]",
+        "longest_line_at_least": 285000
+      }
+    },
+    {
+      "file": "AMZN_10K_2026-02-06_full.txt",
+      "why": "Pipe item headers, forms A and A-prime, where the trailing page number is the only discriminator between a TOC row and a real header (\u00a72.5). ALSO the clearest fiscal_year off-by-one: labelled FY2026, covers FY2025.",
+      "tickets": [
+        "02",
+        "15"
+      ],
+      "claims": {
+        "header_field_absent": "report period",
+        "url_period_year": "2025",
+        "filing_date_year": "2026"
+      }
+    },
+    {
+      "file": "JPM_10K_2026-02-13_full.txt",
+      "why": "Largest filing in the corpus and the most table-dense, so it is the worst case for table-caption binding (\u00a72.7). Also the thin side of the quota asymmetry - 4 filings against Apple's 16 (\u00a72.9).",
+      "tickets": [
+        "06",
+        "07"
+      ],
+      "claims": {
+        "body_chars_at_least": 1450000,
+        "pipe_rows_at_least": 4000
+      }
+    },
+    {
+      "file": "NVDA_10K_2025-02-26_full.txt",
+      "why": "The 10-K baseline for the panel's temporal question. Ticket 08 must guarantee this is in context rather than answering from 10-Q amendments alone.",
+      "tickets": [
+        "08"
+      ],
+      "claims": {
+        "header_field_absent": "report period"
+      }
+    },
+    {
+      "file": "NVDA_10Q_2025Q4_2025-11-19_full.txt",
+      "why": "The off-calendar 10-Q whose metadata contradicts its own text: period_end 2025-10-26 yields fiscal_year 2025, while the filing says 'fiscal year 2026' 53 times. This is citation [C11] in ticket 01's NVIDIA run, rendered as FY2025 above an excerpt about fiscal 2026. Also a 10-Q Item 1A material-changes case (\u00a74.4).",
+      "tickets": [
+        "08",
+        "15"
+      ],
+      "claims": {
+        "header_field_equals": {
+          "report period": "2025-10-26"
+        },
+        "matches_regex": "fiscal year 2026"
+      }
+    },
+    {
+      "file": "INTC_10K_2026-01-23_full.txt",
+      "why": "Its sole bare-regex item match is an 'Item 601(a)' Reg S-K citation - a phantom header (\u00a72.5). Any segmenter that treats it as a real header mis-segments the whole filing.",
+      "tickets": [
+        "02"
+      ],
+      "claims": {
+        "matches_regex": "Item\\s+601\\(a\\)"
+      }
+    },
+    {
+      "file": "NFLX_10K_2026-01-23_full.txt",
+      "why": "The ONLY filing with no cover-page anchor at all, even case-insensitively. This is the file that forces ticket 03's fallback (\u00a72.3 suggests cutting at the first FORM 10-[KQ]).",
+      "tickets": [
+        "03"
+      ],
+      "claims": {
+        "lacks_cover_page_anchor": true
+      }
+    },
+    {
+      "file": "LLY_10K_2026-02-12_full.txt",
+      "why": "The second of \u00a72.3's '244/246' anchor misses - but it misses only because the arch doc's regex is case-SENSITIVE. Adding re.IGNORECASE recovers it for free, so ticket 03 needs a fallback for one file, not two. Kept as a fixture so that stays true.",
+      "tickets": [
+        "03"
+      ],
+      "claims": {
+        "anchor_found_only_case_insensitively": true
+      }
+    },
+    {
+      "file": "ABBV_10K_2025-02-14_full.txt",
+      "why": "Second fiscal_year off-by-one, on a different year boundary from AMZN: labelled 2025, covers 2024. Two independent cases stop ticket 15's fix being tuned to one filing.",
+      "tickets": [
+        "15"
+      ],
+      "claims": {
+        "header_field_absent": "report period",
+        "url_period_year": "2024",
+        "filing_date_year": "2025"
+      }
+    }
+  ]
+}
