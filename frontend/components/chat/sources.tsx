@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { IconChevronRight, IconFileText } from "@tabler/icons-react";
 
+import { citationAnchorId } from "@/lib/chat/citation-anchors";
 import type { Citation, RetrievalMeta } from "@/lib/chat/types";
 
 /**
@@ -43,9 +44,29 @@ function periodLabel(citation: Citation): string {
   return `period ending ${citation.period_end}`;
 }
 
-function Provenance({ citation }: { citation: Citation }) {
+function Provenance({
+  citation,
+  anchorPrefix,
+  focused,
+}: {
+  citation: Citation;
+  /** Set when the handles in the answer link here. Absent for a turn without linking. */
+  anchorPrefix?: string;
+  /** This is the entry the reader just jumped to. */
+  focused?: boolean;
+}) {
   return (
-    <li className="text-xs">
+    <li
+      id={anchorPrefix ? citationAnchorId(anchorPrefix, citation.id) : undefined}
+      // `scroll-mt` keeps the entry clear of the top edge when jumped to, and the ring marks
+      // which one was asked for — arriving at a list of near-identical entries with no
+      // indication of that is barely better than not jumping at all. It stays until another
+      // handle is clicked, so a reader comparing the claim with its passage can look back and
+      // forth without losing their place.
+      className={`scroll-mt-4 rounded text-xs transition-shadow duration-500 ${
+        focused ? "ring-2 ring-primary/40" : "ring-0"
+      }`}
+    >
       <div className="flex flex-wrap items-baseline gap-x-1.5">
         <span className="rounded bg-primary/10 px-1 py-0.5 font-mono font-medium text-primary">
           [{citation.id}]
@@ -152,10 +173,19 @@ export function Sources({
   answer,
   citations,
   meta,
+  anchorPrefix,
+  focusedCitationId,
 }: {
   answer: string;
   citations?: Citation[];
   meta?: RetrievalMeta;
+  /**
+   * Namespaces the DOM id of each entry so the `[Cn]` links in this turn's answer reach this
+   * turn's sources — every answer in a conversation numbers its handles from C1.
+   */
+  anchorPrefix?: string;
+  /** The entry the reader most recently jumped to, highlighted until they jump to another. */
+  focusedCitationId?: string | null;
 }) {
   const [showRest, setShowRest] = useState(false);
 
@@ -189,7 +219,12 @@ export function Sources({
 
       <ul className="mt-2 space-y-2">
         {headline.map((citation) => (
-          <Provenance key={citation.id} citation={citation} />
+          <Provenance
+            key={citation.id}
+            citation={citation}
+            anchorPrefix={anchorPrefix}
+            focused={citation.id === focusedCitationId}
+          />
         ))}
       </ul>
 
@@ -210,7 +245,12 @@ export function Sources({
           {showRest && (
             <ul className="mt-2 space-y-2 border-t pt-2">
               {unused.map((citation) => (
-                <Provenance key={citation.id} citation={citation} />
+                <Provenance
+                  key={citation.id}
+                  citation={citation}
+                  anchorPrefix={anchorPrefix}
+                  focused={citation.id === focusedCitationId}
+                />
               ))}
             </ul>
           )}

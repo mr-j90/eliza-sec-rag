@@ -244,3 +244,94 @@ def test_the_query_understanding_path_cannot_reach_a_provider():
         assert "from src.llm" not in source and "import llm" not in source, (
             f"{module} imports the provider seam"
         )
+
+
+# --- the one-call constraint, counted at the library boundary -----------------------------
+
+
+def test_exactly_one_generation_call_reaches_the_provider_sdk(monkeypatch):
+    """The strongest form of the one-call guarantee.
+
+    `test_ask_returns_a_cited_answer_from_exactly_one_llm_call` counts calls to an **injected**
+    stub, which proves the injected path is used once. It cannot prove that no *other* module
+    independently constructs a client and calls `chat.completions` — only a grep showed that,
+    and a grep is not a regression test: someone adds a second call tomorrow and every test
+    still passes.
+
+    So this counts at the OpenAI SDK boundary, where any call from anywhere in the process has
+    to pass through. The real `build_llm` → `OpenAILLM` path runs; only the network boundary is
+    replaced, so the plumbing under test is the plumbing that ships.
+
+    Free tier: the SDK methods are replaced rather than delegated to, so no key and no service
+    are needed and nothing is spent.
+    """
+    from types import SimpleNamespace
+
+    from openai.resources.chat.completions.completions import Completions
+    from openai.resources.embeddings import Embeddings
+
+    from src.config import settings
+
+    calls: dict[str, int] = {"generation": 0, "embedding": 0}
+
+    def fake_generation(self, *args, **kwargs):
+        calls["generation"] += 1
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="Grounded [C1]."))]
+        )
+
+    def fake_embedding(self, *args, **kwargs):
+        calls["embedding"] += 1
+        raise AssertionError("the fake retriever should make embedding unnecessary")
+
+    monkeypatch.setattr(Completions, "create", fake_generation)
+    monkeypatch.setattr(Embeddings, "create", fake_embedding)
+
+    # A key so `build_llm` constructs a real client; constructing one makes no network call.
+    monkeypatch.setenv("OPENAI_API_KEY", "not-a-real-key")
+    settings.cache_clear()
+
+    # Only the retriever is substituted. `get_llm` is left alone on purpose — the point is to
+    # exercise the real provider plumbing.
+    app.dependency_overrides[get_retriever] = lambda: fake_retriever
+    try:
+        response = TestClient(app).post("/ask", json={"question": "supplier risk", "top_k": 3})
+    finally:
+        app.dependency_overrides.clear()
+        settings.cache_clear()
+
+    assert response.status_code == 200
+    assert calls["generation"] == 1, (
+        f"{calls['generation']} generation calls reached the SDK; the answer must come from "
+        "exactly one"
+    )
+
+
+def test_no_module_other_than_llm_can_produce_an_answer():
+    """One `.complete()` call site, and one `chat.completions` call site, in the whole backend.
+
+    Asserted rather than left to a grep in the README, because this is the claim the assessment
+    turns on. If a second call site appears, this fails and names the file.
+    """
+    from pathlib import Path
+
+    src = Path(__file__).parent.parent / "src"
+    answer_sites: list[str] = []
+    provider_sites: list[str] = []
+
+    for path in sorted(src.rglob("*.py")):
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("#") or stripped.startswith('"'):
+                continue
+            if ".complete(" in stripped and "def complete" not in stripped:
+                answer_sites.append(f"{path.relative_to(src)}:{number}")
+            if "chat.completions.create" in stripped:
+                provider_sites.append(f"{path.relative_to(src)}:{number}")
+
+    assert answer_sites == ["api.py:130"] or len(answer_sites) == 1, (
+        f"expected exactly one answer call site, found {answer_sites}"
+    )
+    assert len(provider_sites) == 1, (
+        f"expected exactly one chat-completions call site, found {provider_sites}"
+    )

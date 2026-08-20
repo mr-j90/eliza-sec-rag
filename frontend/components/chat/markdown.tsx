@@ -3,9 +3,15 @@
 /* eslint-disable @typescript-eslint/no-unused-vars --
    `node` is destructured out of each renderer so react-markdown's AST node
    isn't spread onto the DOM element; the binding itself is intentionally unused. */
+import { useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import {
+  citationIdFromHref,
+  isCitationHref,
+  remarkCitationLinks,
+} from "@/lib/chat/citation-anchors";
 import { cn } from "@/lib/utils";
 
 // Tailwind-styled renderers for the assistant's markdown (GFM tables included).
@@ -79,9 +85,96 @@ const COMPONENTS: Components = {
   hr: () => <hr className="my-3 border-border" />,
 };
 
-export function Markdown({ content }: { content: string }) {
+/**
+ * A `[C1]` handle, linked to the source entry below the answer.
+ *
+ * Deliberately quiet: tinted and monospaced like the badge it points at, with no underline
+ * until hover, because a sentence can end in seven consecutive handles and seven underlined
+ * links would read as damage. It is a jump, not navigation, so the default anchor behaviour is
+ * suppressed — the transcript scrolls in its own container and a real hash change would push a
+ * route.
+ */
+function CitationLink({
+  href,
+  children,
+  onSelect,
+}: {
+  href?: string;
+  children?: React.ReactNode;
+  onSelect?: (citationId: string) => void;
+}) {
+  const id = citationIdFromHref(href);
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>
+    <a
+      href={href}
+      onClick={(event) => {
+        if (!id) return;
+        event.preventDefault();
+        onSelect?.(id);
+      }}
+      aria-label={id ? `Jump to source ${id}` : undefined}
+      className="rounded bg-primary/10 px-0.5 font-mono text-[0.9em] font-medium text-primary no-underline transition-colors hover:bg-primary/20"
+    >
+      {children}
+    </a>
+  );
+}
+
+export function Markdown({
+  content,
+  citations,
+}: {
+  content: string;
+  /**
+   * Makes `[Cn]` handles clickable. Omit it and they render as the plain text they are — which
+   * is what every handle does anyway when it is not in `resolvable`, so an unlinked handle is
+   * never a broken one.
+   */
+  citations?: {
+    /** Scopes anchor ids to this turn. Every answer numbers its handles from C1. */
+    prefix: string;
+    resolvable: ReadonlySet<string>;
+    onSelect: (citationId: string) => void;
+  };
+}) {
+  // Keyed on the ids rather than the Set identity: a parent that rebuilds the Set each render
+  // would otherwise rebuild the plugin, and with it the whole parsed tree, on every keystroke
+  // elsewhere in the page.
+  const ids = citations ? [...citations.resolvable].sort().join(",") : "";
+  const plugins = useMemo(
+    () =>
+      citations
+        ? [remarkGfm, remarkCitationLinks({ prefix: citations.prefix, resolvable: citations.resolvable })]
+        : [remarkGfm],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `ids` stands in for the Set.
+    [citations?.prefix, ids],
+  );
+
+  const components = useMemo<Components>(
+    () => ({
+      ...COMPONENTS,
+      a: ({ node, href, children, ...p }) =>
+        isCitationHref(href) ? (
+          <CitationLink href={href} onSelect={citations?.onSelect}>
+            {children}
+          </CitationLink>
+        ) : (
+          <a
+            className="text-primary underline underline-offset-2"
+            target="_blank"
+            rel="noreferrer"
+            href={href}
+            {...p}
+          >
+            {children}
+          </a>
+        ),
+    }),
+    [citations?.onSelect],
+  );
+
+  return (
+    <ReactMarkdown remarkPlugins={plugins} components={components}>
       {content}
     </ReactMarkdown>
   );

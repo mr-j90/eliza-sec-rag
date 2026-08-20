@@ -4,7 +4,8 @@ Ask a business question about SEC 10-K/10-Q filings and get a cited, structured 
 **exactly one LLM call**. Indexing, entity resolution, hybrid retrieval, fusion, reranking and
 coverage analysis all run before that call; the call itself is one `chat.completions` request.
 
-Corpus: 246 filings from 54 US public companies, 2023–2025.
+Corpus: 246 filings from 54 US public companies. The brief says 2023–2025; the filings themselves
+span **fiscal years 2014–2025**, which is why nothing here hardcodes that window.
 
 ---
 

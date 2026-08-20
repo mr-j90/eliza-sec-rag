@@ -1,15 +1,66 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Flower2 } from "lucide-react";
 
 import { AiComposer } from "@/components/chat/ai-composer";
+import { citationAnchorId } from "@/lib/chat/citation-anchors";
 import type { ChatMessage } from "@/lib/chat/types";
 
 import { Markdown } from "./markdown";
 import { Sources } from "./sources";
 import { ThinkingIndicator } from "./thinking-indicator";
+
+/**
+ * One assistant turn: the answer, and the sources it stands on.
+ *
+ * Its own component because the `[Cn]` handles in the answer link to entries in the panel
+ * below, and the two need to agree on which entry is which. The state lives at the turn rather
+ * than at the transcript: handles restart at C1 in every answer, so `C3` means a different
+ * passage two turns down and one shared "focused citation" would highlight the wrong one.
+ */
+function AssistantTurn({ message, index }: { message: ChatMessage; index: number }) {
+  const [focused, setFocused] = useState<string | null>(null);
+
+  // Only handles that resolve to a retrieved passage become links. A fabricated one stays
+  // plain text: a link implies provenance, and offering it for a citation the backend could
+  // not verify is the failure the citation check exists to catch.
+  const resolvable = useMemo(
+    () => new Set((message.citations ?? []).map((citation) => citation.id)),
+    [message.citations],
+  );
+
+  const prefix = `turn-${index}`;
+  const select = useCallback(
+    (citationId: string) => {
+      setFocused(citationId);
+      // The transcript scrolls in its own container, so this is a scroll rather than a hash
+      // navigation. `nearest` keeps the answer in view when the entry is already on screen.
+      document
+        .getElementById(citationAnchorId(prefix, citationId))
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    },
+    [prefix],
+  );
+
+  return (
+    <div className="text-sm leading-relaxed">
+      <Markdown
+        content={message.content}
+        citations={{ prefix, resolvable, onSelect: select }}
+      />
+      <Sources
+        answer={message.content}
+        citations={message.citations}
+        meta={message.retrievalMeta}
+        anchorPrefix={prefix}
+        focusedCitationId={focused}
+      />
+    </div>
+  );
+}
+
 
 export function ChatView({
   conversationId,
@@ -130,18 +181,11 @@ export function ChatView({
                 {m.content}
               </div>
             </div>
+          ) : m.content ? (
+            <AssistantTurn key={i} message={m} index={i} />
           ) : (
             <div key={i} className="text-sm leading-relaxed">
-              {m.content ? (
-                <>
-                  <Markdown content={m.content} />
-                  <Sources
-                    answer={m.content}
-                    citations={m.citations}
-                    meta={m.retrievalMeta}
-                  />
-                </>
-              ) : awaiting ? (
+              {awaiting ? (
                 <ThinkingIndicator />
               ) : (
                 // Empty and not awaiting: the request died without writing
