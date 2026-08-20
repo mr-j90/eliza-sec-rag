@@ -1,0 +1,647 @@
+# Prompt log
+
+Every change to the system prompt in `src/prompt.py`, why it changed, and what it did.
+Written as the changes happen — a log reconstructed at the end shows, and the brief asks for
+this history as a deliverable in its own right rather than as a byproduct.
+
+Expect the interesting entries to be failures. "v2 over-cited and became unreadable" says
+more about the work than a list of clean wins.
+
+The version here is the one `retrieval_meta.prompt_version` reports on every answer, so any
+answer can be traced to the prompt that produced it. `tests/test_prompt_template.py` asserts
+the live version has an entry and that the numbering has no gaps — a gap would mean an
+iteration happened and was not written down, which is the one thing this file exists to
+prevent.
+
+The rendered prompt itself is [`docs/PROMPT_TEMPLATE.md`](docs/PROMPT_TEMPLATE.md), generated
+from `src/prompt.py` rather than transcribed, with a test that fails if the two disagree.
+
+## What an entry contains
+
+Not a template to fill in — the useful ones vary — but each answers these, and an entry that
+cannot answer the second and fourth is not worth writing:
+
+- **What changed.** The actual text, before and after, or close enough to quote.
+- **Why.** The failure it addresses, with the measurement or the transcript that revealed it.
+  "Improved the prompt" is not a reason.
+- **Observed effect.** What the change did, including when the answer is "nothing measurable".
+- **What it made worse.** Prompt changes trade off; the entry that hides this is the one that
+  misleads the next person. Several entries below exist mostly to record a regression the
+  change forced.
+
+Entries headed **"observed again … (no prompt change)"** record a change in the *context* the
+prompt receives — a new reranker, reflowed passages, bound table captions — rather than an edit
+to the prompt. They are logged because the prompt's behaviour changed even though its text did
+not, and the log would otherwise imply it had been working against the same input all along.
+
+---
+
+## v1 — 2026-08-19 — the two rules everything else depends on
+
+**Version:** v1 · the first end-to-end answer — frontend → FastAPI → one LLM call
+
+**What it says.** Four rules in precedence order: answer only from the provided context;
+every factual claim carries a `[C#]` handle; a company named in the question but absent from
+the context is called out explicitly rather than substituted; never dress a hedge as a
+finding. Closes with a Sources list mapping handles to company, form, period and section.
+
+**Why this and not the full contract.** The answer contract is five parts — bottom line,
+per-entity findings, comparison table, gaps and confidence, sources. v1 deliberately does
+not ask for that structure. v1's scope was the *wire*: one real answer travelling from the
+corpus through one LLM call to the browser. Prompting for a comparison table while the
+context is a fixed slice of a single filing would produce a table with one column and teach
+us nothing about whether the prompt works. The structure arrives with the retrieval that
+makes it meaningful.
+
+**Rule ordering is deliberate.** "Answer only from the provided context" sits above the
+citation rule because a model that invents a claim and then attaches a plausible handle to it
+has defeated the citation contract while appearing to honour it. Grounding first, attribution
+second.
+
+**Observed effect — first live runs, `gpt-4.1`, 2026-08-19.** Two questions against the fixed
+Apple context.
+
+*"What are the primary risk factors facing Apple?"* — grounded, three handles used, all three
+resolve to real citations. Structure emerged as numbered themes (macroeconomic, political and
+trade, natural disasters and public health) with a Sources list, without being asked for that
+shape. Generation 5,990 ms; retrieval 1.1 ms.
+
+*"...facing Apple, Tesla, and JPMorgan, and how do they compare?"* — **rule 3 held.** It opened
+with "The context provided contains detailed risk factors for Apple Inc. only. There is no
+information about Tesla or JPMorgan in the excerpts you provided," answered for Apple, and
+closed by repeating that no comparison could be made. No fabricated Tesla or JPMorgan risk
+factors, no invented tickers, every handle resolved. Generation 4,944 ms.
+
+That second result — a graceful refusal — is the single most valuable behaviour to demo, and
+it worked at v1 without refusal-specific tuning. Worth not over-reading: with a single-company
+context, "the others are absent" is the *easy* case. The hard case is a company absent from the
+whole 246-filing corpus while nine plausible neighbours are retrieved — still ahead of us here.
+
+**Two things to watch, not yet problems.**
+
+- **Rule 3 fires twice in one answer.** The refusal appears in the opening paragraph and again
+  in the closing line. Correct but redundant, and at v1 it is not worth trading away emphasis
+  for concision — a refusal that repeats itself is a better failure than one a reader skims
+  past. Revisit if answers get long.
+- **Generation dominates latency by three orders of magnitude** — ~5-6 s against ~1 ms of
+  context assembly. The 15 s end-to-end target has real headroom now, but that is with three
+  chunks. At the full 40k-token context budget this is the number that will move, and that
+  budget is the named lever.
+
+
+## v1 — observed again under entity quotas, 2026-08-19 (no prompt change)
+
+Recorded because the prompt did **not** change and the behaviour did. Rule 3 — name the absent
+company rather than substitute — was previously only exercisable on companies missing from the
+*index*. With all 246 filings loaded and entity extraction running, it can finally be tested
+against a company genuinely absent from the corpus.
+
+*"What is Shopify's China exposure?"* → `entities_detected: []`,
+`unresolved_mentions: ["Shopify"]`, and the answer: *"Shopify does not appear in any of the
+provided context passages. Therefore, I cannot provide any information about Shopify's China
+exposure. Sources: None (Shopify not present in context)."*
+
+Note what the retrieval did underneath: with no company resolved, the unfiltered search still
+returned 20 passages from ten unrelated companies. The prompt refused anyway and cited nothing —
+which is the rule holding under adversarial conditions rather than in the easy case. It is also
+the argument for the refusal hardening still to come: a reader should not have to trust that the
+model ignored twenty irrelevant passages.
+
+*"...facing Apple, Tesla, and JPMorgan"* → 6/6/6 passages, 13 handles, all resolving, and the
+answer grouped itself by company without being asked to. v1 still does not request the
+five-part structure; it is now clear that it should, because the model is inventing a structure
+per answer and consistency is part of what makes a comparison readable. That is a v2 change and
+belongs with the refusal work.
+
+
+## v2 — 2026-08-19 — the five-part contract, and it did not take
+
+**Version:** v2 · the five-part answer contract
+
+**What changed.** Added the five-part answer contract — bottom line, findings, comparison,
+gaps and confidence, sources — as required markdown headings in the **system prompt**, after the
+grounding rules. Also started passing the absent-company list from `unresolved_mentions` into the
+user message, so rule 3 acts on a fact rather than on the model noticing a gap.
+
+**Observed effect: it barely worked, and a single-sample test hid that.** The section check passed
+on its first run, so I nearly shipped it. Reading an actual answer showed no headings at all —
+it opened `**Apple Inc. — Primary Risk Factors:**`. Four generations of the same question:
+
+| run | sections present |
+|---|---|
+| 1 | **0 of 5** |
+| 2 | **0 of 5** |
+| 3 | **0 of 5** |
+| 4 | 2 of 5 |
+
+So the first pass was luck. The absent-company note *did* work — the refusal named Shopify
+reliably — which made the failure easier to miss, because the answer was correct in substance and
+shapeless in form.
+
+**Why.** The format sat in the system prompt behind five grounding rules, and the user message
+carried ~14k tokens of retrieved passages between it and the question. Instruction adherence
+degrades with distance from the end of the prompt, and the context block is what creates that
+distance. Nothing was wrong with the wording.
+
+---
+
+## v3 — 2026-08-19 — move the format to the end of the user message
+
+**Version:** v3 · same change, relocated
+
+**What changed.** The grounding rules stay in the system prompt, which ends with a single line
+pointing at the format. The required skeleton now goes **last in the user message**, after the
+context and after the question. Not a rewording — a relocation.
+
+**Observed effect.**
+
+| question | v2 | v3 |
+|---|---|---|
+| comparative (Apple/Tesla/JPMorgan) | 0-2 of 5 | **5 of 5** |
+| temporal (NVIDIA, last two years) | — | **5 of 5** |
+| sector (major pharma) | — | **5 of 5** |
+| out-of-corpus (Shopify) | — | **5 of 5** |
+
+Stable across repeated generations, which is now asserted by a test that pays for two extra calls
+rather than trusting one sample — the specific failure v2 taught.
+
+**What this cost.** Two extra generations per test run, and a prompt that is now split across two
+messages, which is marginally harder to read than one block. Worth it: structure that appears 40%
+of the time is worse than no structure, because a reader learns to distrust the shape.
+
+**Known weakness, carried deliberately.** The "Comparison" section is required even for
+single-company questions, where the prompt tells it to write one line saying a comparison does not
+apply. That is a heading earning its place by convention rather than by content, and if answers
+start reading as padded, this is the first thing to reconsider.
+
+
+## v4 — 2026-08-19 — a refusal answers nothing else
+
+**Version:** v4 · the clean refusal
+
+**What changed.** When the question names companies and **none** of them are in the corpus, the
+five-part skeleton is replaced by a two-section refusal instruction: bottom line, gaps, and an
+explicit prohibition on Findings, Comparison and citations. Everything else is untouched.
+
+**Why.** v3 refused correctly and then kept going. Asked *"What is Shopify's China exposure?"* it
+said there were no Shopify filings — and then wrote findings for Amazon, Bank of America, Cisco,
+Goldman Sachs, JPMorgan, McDonald's, Merck, NVIDIA, Pfizer and Procter & Gamble, quoting Bank of
+America's China exposure to the dollar. Twenty citations. Nothing fabricated; the wrong question
+answered at length.
+
+The cause was a rule I wrote for a different case. v2 added *"answer for the companies that are
+present"* so a mixed question — Apple present, Shopify absent — would not lose the Apple half. With
+**no** named company present, "present" degrades to "whatever retrieval happened to return", and
+the model obligingly answered about ten companies nobody had mentioned.
+
+**The distinction is three-way, and getting it wrong breaks the best-behaving question type.**
+
+| The question | v4 behaviour |
+|---|---|
+| names companies, none present | refusal only — 2 sections, 0 findings, 0 citations |
+| names companies, some present | findings for those present, absent ones named |
+| names no company at all | unchanged: normal answer over what was retrieved |
+
+That last row is why the rule is phrased around *absent named companies* rather than "only answer
+about what was named". A sector question — "What regulatory risks do major pharmaceutical companies
+face?" — names no company either, and a careless version of this fix would refuse it.
+
+**Observed effect.**
+
+| question | sections | company subsections | citations |
+|---|---|---|---|
+| Shopify (refusal) | Bottom line, Gaps | **0** | **0** |
+| Apple + Shopify (mixed) | all five | 1 (Apple) | 34 |
+| major pharma (sector) | all five | 4 | 30 |
+| Apple/Tesla/JPMorgan | all five | 3 | 28 |
+
+**What it made worse, and what that forced.** A refusal has no Sources section, because it cites
+nothing — which broke a v2-era test that required Sources on every answer unconditionally. The test
+was amended rather than the behaviour: the honest rule is "cite your sources when you have used
+sources", and demanding the heading on a refusal would mean either an empty section or an
+invitation to fill it. Worth noting as a general shape — a prompt rule written as "always include
+X" acquires an exception the moment a legitimate answer has no X.
+
+**Placement, again.** The refusal instruction goes after the context for the same reason the format
+block does (v3's finding). Put before it, it would have read as fixed and behaved as before.
+
+## v5 — 2026-08-20 — the passage label states a period, not a fiscal year
+
+**Version:** v5 · the period end replaces the fiscal-year label
+
+**What changed.** `_label` — the header on each context passage the model reads — went from
+`Apple Inc (AAPL) | 10-K FY2025 | Item 1A — Risk Factors` to
+`Apple Inc (AAPL) | 10-K, period ending 2025-09-27 | Item 1A — Risk Factors`. Nothing else in
+the prompt moved.
+
+**Why.** `FY{fiscal_year}` was derived from the calendar year the reporting period ends in.
+For the **18 of 54 issuers** in this corpus whose fiscal year does not end in December, that is
+not the year the filing calls itself. NVIDIA's quarter ending 2025-10-26 is "fiscal year 2026"
+throughout its own text — and **26 of the 67 chunks** from that filing say so explicitly, under a
+label reading FY2025.
+
+That is a bad thing to hand a model whose first rule is to answer only from the passages given.
+The label and the passage disagreed, and the model had no way to know which to trust. A wrong
+period in a diligence answer is not a cosmetic error: "revenue grew to $130.5B in FY2025" is a
+different claim from the same sentence about FY2026.
+
+A date cannot disagree with the passage it labels, which is the whole reason for preferring it.
+
+**Considered and rejected: deriving the issuer's own fiscal-year label.** It is the most faithful
+option and it was measured rather than dismissed. Inline XBRL carries
+`DocumentFiscalYearFocus` — `nvda-20251026...2026Q3` — and where it extracts it is
+authoritative. But two regex attempts over the residue reached only 93/246 and 74/246 files;
+AAPL, AMZN, GOOG, MSFT, TSLA, META, XOM, UNH, KO and DIS all missed. The arithmetic fallback
+(period-end month versus fiscal-year-end month) is fragile exactly where it matters, because
+52/53-week calendars put JNJ's year end in December *or* early January and Disney's in September
+*or* October. It would also have to run **before** the pending inline-XBRL strip rework, which
+couples two unrelated changes.
+
+**Observed effect.** Not a prompt-quality change so much as a correctness one — the 29 live tests
+pass unchanged under v5, including all 11 answer-contract tests. The visible difference is on the
+panel's own temporal question:
+
+| | v4 | v5 |
+|---|---|---|
+| `fiscal_years` filter for "the last two years" | `[2025, 2026]` | `[2024, 2025]` |
+| distinct years in the retrieved citations | `[2025]` — one year | `[2024, 2025]` — two |
+
+That second row is the one that matters, and it is not a display fix. `LATEST_FISCAL_YEAR`
+anchors relative time expressions to the corpus, and it was computed from the same broken
+derivation, so it read 2026 for a snapshot whose newest period ends in 2025. A question asking
+for two years received one, and the answer looked confident about it.
+
+**Note for whoever writes the next entry.** The label is what the model sees; `sources.tsx` is
+what the reader sees. They were changed together on purpose. If one moves without the other, the
+answer will cite a period the UI does not show.
+
+## v6 — 2026-08-20 — the model is told what it is standing on
+
+**What changed.** A computed coverage sentence is inserted after the context, before the
+format block:
+
+> Evidence available to you: Evidence base — 4 companies, filings used: JNJ 3 of 17, PFE 3 of
+> 15, MRK 1 of 1, LLY 1 of 1. This corpus holds only a single filing for MRK and LLY, so
+> conclusions about them rest on one period.
+
+plus an instruction to reflect it in *Gaps and confidence* and let it temper how broadly
+conclusions are stated.
+
+**Why.** The panel's third question is *"What regulatory risks do the major pharmaceutical
+companies face?"* and this corpus holds **JNJ 17 filings, PFE 15, and ABBV, MRK, LLY, TMO at
+one filing each**. Every passage retrieved for that question is genuinely relevant, so no
+retrieval metric flags anything — the system simply answers on behalf of an industry while
+standing on two companies. The failure is invisible to `recall@k` and obvious to a reader.
+
+The sentence is **computed, not requested**. Asking the model to derive its own coverage would
+make the single most trust-bearing claim in the answer the least verifiable thing in it. The
+same string is rendered beside the answer, so what the reader sees is the computed copy and
+the model's prose only has to be *proportionate*, not accurate about counts.
+
+Counting is in **distinct filings, never passages** — the context held seven Merck passages
+from one filing, and "7" would have overstated that evidence sevenfold in precisely the case
+where it matters.
+
+**Observed effect.** The model now writes its own hedge, unprompted as to wording:
+
+> "Only a single (most recent) filing is available for Merck & Co Inc and Eli Lilly and
+> Company, so conclusions about their regulatory risks are based on limited evidence and may
+> not fully reflect ongoing or prior strategies."
+
+**What it made worse, and what that forced — a second edit in the same version.** Given the
+counts alone, the model wrote:
+
+> "No filings are available for companies except Eli Lilly and Company, Johnson & Johnson,
+> Merck & Co Inc, and Pfizer Inc"
+
+which is **false**. This corpus holds filings for ABBV and TMO; retrieval did not reach them.
+The model had turned a retrieval limit into a claim about the data — worse than saying nothing,
+because it sounds like knowledge of the corpus.
+
+So the note now ends: *"This describes the passages you were given, not the whole corpus.
+Companies not listed may still have filings here that this search did not return — say a
+company is absent from the corpus only if you were told so explicitly above."* Genuine
+absences already arrive through the `absent` mechanism from v4, and only those may be
+described that way. After the edit:
+
+> "Other major pharmaceutical companies not listed in the context (e.g., Novartis, Sanofi,
+> GSK) are not addressed."
+
+True, and carefully scoped to the context rather than the corpus.
+
+**The general shape, worth carrying forward.** Handing the model a *partial* census invites it
+to treat the partial set as complete. Any count given to a model needs to say what it is a
+count *of*, or the model will pick the more useful-sounding interpretation.
+
+## v6 — observed again after table-caption binding, 2026-08-20 (no prompt change)
+
+No prompt edit. Recorded because the *context* the v6 prompt receives changed materially, and
+the log would otherwise imply the prompt was working against the same input it started with.
+
+Table-caption binding (§2.7) carries a table's scale caption — `(In millions)` — and its
+period-header row into any chunk that was cut below them. Measured across five filings,
+financial-table chunks carrying figures with **no stated scale** fell from **113 of 405 (28%)
+to 15 of 405 (4%)**; the residual are share-count tables that need no caption.
+
+**Why this belongs in a prompt log.** The passages are the prompt. Before this, a passage
+reaching the model could read:
+
+    Shares repurchased | (211) |  | (27) |  | (9,719) |  | (9,746) |
+    Net income         | —     |  | —    |  | 72,880  |  | 72,880  |
+
+`72,880` is millions of dollars and `(211)` is millions of shares, and nothing in the passage
+said so. No prompt instruction can recover a unit that is not in the context — the model either
+guesses or omits, and for a diligence answer an order-of-magnitude guess is the worst available
+outcome. This is the clearest case on the map of a retrieval fix doing what no prompt wording
+could.
+
+**Nothing synthesized.** Only the filing's own caption and header lines are carried, from
+earlier in the same section, and the walk stops at prose so a caption in *thousands* can never
+be bolted onto figures in *millions*. A wrong scale reads as authoritative and would be worse
+than the missing one.
+
+## v6 — observed again with cross-encoder reranking, 2026-08-20 (no prompt change)
+
+No prompt edit. Recorded because the **selection** of passages reaching the v6 prompt changed,
+and because reranking is the step most likely to be mistaken for an extra LLM call.
+
+A cross-encoder now scores the overfetched candidate set before the top-k cut —
+`Xenova/ms-marco-MiniLM-L-6-v2`, run locally through FastEmbed's ONNX runtime like the BM25
+leg. **No API call, no key, no per-query cost.** It is retrieval work done before the single
+generation call, exactly as embedding is, so the one-call constraint is untouched: there is
+still one `complete()` call site, and `src/rerank.py` imports no provider SDK.
+
+**What the model now sees.** The same 20 passages' worth of budget, chosen by a model that read
+the question and each passage *together* rather than by fusing two rank lists that never
+compared them. Retrieval latency 1.0s → 1.7s; generation is ~15s, so it is not perceptible.
+
+**The limit worth stating out loud in the walkthrough.** Every reranker FastEmbed exposes
+truncates at **512 tokens**, measured rather than assumed — a marker sentence at token 300
+moves the score, the same sentence at token 600 moves it by exactly 0.0000, for all four
+candidates. Chunks are median 715 tokens, so **26.8% of indexed text does not influence
+ranking**. Two things make that tolerable, and both are consequences of earlier entries:
+reflow means a chunk's first 512 tokens are a real block opening rather than an arbitrary
+window, and the full chunk still reaches the prompt untouched. The reranker orders candidates;
+it does not read them on the model's behalf.
+
+**A trap for whoever revisits this.** `jina-reranker-v1-turbo-en` advertises 8192 context and
+truncates at 512 through this export — do not repeat the 8192 figure. And
+`jina-reranker-v2-base-multilingual` is **CC-BY-NC-4.0**: the strongest option on offer and
+unusable commercially. Both are pinned by tests.
+
+## v7 — 2026-08-20 — quarterly risk factors are labelled as amendments
+
+**What changed.** When any retrieved passage is a 10-Q risk-factor section, its handles are
+named and characterised:
+
+> Note on C5, C6, C7, C8, C9, C10, C11: these are quarterly (Form 10-Q) risk-factor passages,
+> which by regulation state only *material changes* since the company's most recent annual
+> report — not its full risk profile. Treat them as amendments. Do not describe a risk as new
+> or newly disclosed on the strength of one, and do not present them as a complete set of
+> risks. Where an annual (10-K) risk-factor passage is also provided, that is the baseline they
+> amend.
+
+**Why.** Form 10-Q's Item 1A carries only material changes from the 10-K. Measured on this
+corpus, the median annual risk-factor section is **12,876 tokens** against a quarterly
+**2,617** — and at the thin end, *"How did Pfizer's risk factors change in its latest quarterly
+report?"* retrieved **one chunk, 562 tokens**, with no baseline at all. Answered from that, the
+system describes a company's entire risk posture from an amendment: fluent, cited, and wrong
+about the thing it was asked. No retrieval metric detects it, because the passage retrieved is
+genuinely relevant.
+
+The trigger is narrow, which is worth knowing. With no form filter the annual section is ~5x
+larger, yields ~5x more chunks, and dominates retrieval on its own — three probe questions all
+came back 10-K-majority. The failure appears only when the *question's own wording* restricts
+the form ("quarterly", "10-Q"), which `_form_type_in` honours.
+
+**Why the label is needed and not just the baseline.** The retrieval half of this fix
+(relaxing a 10-Q form filter to let the annual risk-factor baseline through) makes the context
+complete — and thereby makes a *new* error available: with baseline and amendment side by side
+and nothing distinguishing them, "newly disclosed this quarter" can be asserted about a risk
+that has sat in the 10-K for years. Supplying more context without saying what it is trades one
+wrong answer for another. The two halves only work together.
+
+**A limit stated in the wording.** The regulation is a floor, not a description of practice.
+Measured, **3 of 15 issuers** here — Meta, Amazon, Microsoft — restate their **full** risk
+factors every quarter; Meta's quarterly Item 1A runs ~36,000 tokens, *larger* than the median
+annual one. So the note says these passages *state only material changes* per the regulation
+rather than asserting they are short, and it tells the model to treat them as amendments rather
+than to discount them. A blanket "quarterly risk factors are incomplete" would have been false
+for a fifth of the corpus.
+
+**Observed effect.** The handles are named correctly (7 of 20 passages on the Tesla quarterly
+question). Not a measurable retrieval change — the retrieval half is what moved those numbers,
+and it is recorded in the ticket rather than here.
+
+## v8 — 2026-08-21 — a figure carries the scale its passage states
+
+**What changed.** A sixth grounding rule, standing rather than conditional:
+
+> 6. A row of values separated by `|` is a row of a financial table, and a scale caption in the
+>    same passage — `(in millions)`, `($ in thousands)` — states the scale of the figures in it.
+>    Give a figure with the scale its own passage states. Where a passage states no scale, give
+>    the figure as it appears and say the scale is not stated. Never assume one.
+
+**Why.** Financial tables are roughly **46% of the index** (Item 8 Financial Statements 30%,
+10-Q Item 1 Financial Statements 16%), and they reach the model as pipe-delimited rows:
+`iPhone® | $ | 39,669 | ... | $ | 156,778 |`. The ingest path works hard to keep those rows
+meaningful — `_bind_table_context` re-attaches the scale caption and period header to any
+window cut below them, from the filing's own lines. Measured 2026-08-21 across
+`AAPL_10Q_2023Q3`, `AAPL_10K_2025-10-31` and `NVDA_10K_2022Q1`: **96 figure-bearing chunks, 4
+with no scale caption**, and three of those four are false positives (two exhibit-index rows
+where `| 4.1 |` looks like a figure, one share count), leaving **one** genuine unscaled table
+continuation.
+
+So the caption is almost always *present*. Until now nothing in the prompt said what to do with
+it: the five existing rules never mention tables, and rule 5 only forbids inventing a figure.
+Units on screen were an outcome the model happened to produce, not a rule it was held to — and
+a revenue figure with no scale is the one kind of wrong number a reader catches instantly.
+
+**Why the second half is the rule.** "State the units" on its own invites the model to supply
+units it was not given, turning a missing scale into a confidently wrong one. That is the same
+trade `_bind_table_context` already makes at ingest, where it walks back at most two narrative
+lines rather than risk bolting a *thousands* caption onto *millions* figures. A wrong scale
+reads as authoritative; a missing one does not.
+
+**Observed effect — a floor, not a fix.** Measured against v7 on the same two questions, same
+index, before and after:
+
+- *"How has NVIDIA's revenue and growth outlook changed over the last two years?"* —
+  **no material change.** v7 already gave every figure as `$60.9 billion`, `$35.1 billion`,
+  `$116.2 billion`. The rule bought nothing here because nothing was wrong here.
+- *"What is the breakdown of Apple's marketable securities by investment category?"* — the
+  question that retrieves raw table rows. v7 stated `(in millions)` once, parenthetically, in a
+  lead-in sentence. v8 states it in **Bottom line** and again beside the figures
+  ("at fair value, in millions", "the figures are presented in millions of dollars").
+
+The honest summary is that this rule enforces what the model was mostly already doing, and
+makes the scale explicit where the figures are rawest. It is worth keeping as a guard rather
+than as an improvement: the failure it prevents is silent, and one bare figure in a diligence
+answer costs more than four lines of prompt.
+
+---
+
+# The eval-summary prompt
+
+A **second, separate prompt**, in `src/eval/summarize.py`. It writes the plain-English summary
+at the top of the `/evals` page from the metrics in `eval/results/`, and it is versioned here
+because it is a prompt whose failures are worth the same record as the answer prompt's.
+
+Two things keep the two apart. Its headings are `## Eval-summary prompt vN` rather than `## vN`,
+so `tests/test_prompt_template.py`'s no-gaps check over the *answer* prompt's numbering does
+not see them. And this is an **eval-time call**: SPEC §5.2's one-generation-call-per-answer
+constraint covers `POST /ask`, which never reaches this module. Its own version lives in
+`PROMPT_VERSION` and is part of the summary cache key, so editing the prompt invalidates every
+cached summary rather than leaving text on screen that the current prompt would not produce.
+
+## Eval-summary prompt v1 — 2026-08-20 — the caveats are given, not inferred
+
+**What changed.** First version. Three decisions worth naming:
+
+The metric caveats are handed to the model **as established facts** rather than left for it to
+work out — that raw `recall@k` has a 36-fold-varying per-question ceiling, that `mrr@10` and
+`ndcg@10` are saturated, that `entity_coverage@k` is pinned near 1.0 *by the quota design*.
+
+The reply is **structured JSON** (`{headline, findings, caveat}`), not markdown, so the page
+renders it without a markdown pipeline and every field is short enough to check.
+
+And the figure rule is absolute: *use only the numbers in the data given to you, copied exactly
+as they appear; do not compute new figures.* Every numeral in the reply is then checked against
+the payload and named on the page if it is not found there.
+
+**Why.** A model shown ten metrics and no context writes "MRR@10 of 1.0 shows excellent
+ranking" — which is the exact misreading `docs/EVALUATION.md` §3 exists to prevent, now
+rendered above the table in friendly prose where it is more likely to be believed than the
+table itself. The whole point of putting a summary on that page is to stop a reader
+misinterpreting the numbers; a summary that misinterprets them for you is worse than none.
+
+**Observed effect.** Usable on the first generation, and the caveat field did its job — it led
+with the quota-pinning caveat unprompted. The findings, though, mostly restated table rows
+("`entity_coverage@20` is 1.0"), which is not what a stakeholder-facing summary is for. Fixed
+in v2.
+
+**What it made worse — and what it caught.** The strict figure rule produced a **false
+positive** on its first real run: the model wrote "a -0.0114 difference", the checker's regex
+deliberately does not capture the sign, and the unsigned `0.0114` was not among the allowed
+renderings of the payload's `-0.0114`. The prompt was right and the checker was wrong. Fixed by
+allowing the magnitude of a negative payload value, with a test that names the run that found
+it. The lesson generalises: a strict check on generated text will flag correct output, and the
+flag has to be cheap to investigate — which is why the check *names the offending figure* on
+the page rather than reporting a bare pass/fail.
+
+## Eval-summary prompt v2 — 2026-08-20 — lead with the meaning, then the metric
+
+**What changed.** Two rules added:
+
+> **Lead with the meaning, then the metric.** Say what happened in words a reader who has never
+> heard of nDCG would understand, and put the figure in support of it — not the other way round.
+> Write "every company a question named appeared in the retrieved filings
+> (entity_coverage@20 = 1.0)", not "entity_coverage@20 is 1.0". A finding that only restates a
+> row of the table has not been written.
+
+and, in the plain-English rule, *no naming a configuration string in the prose without saying
+what it is ("with the cross-encoder reranking step on", not "hybrid+quotas+prefix")*.
+
+**Why.** v1's findings read as a transcription of the table they sit above, which defeats the
+purpose: the tables are behind a disclosure precisely because most readers of that page do not
+want them, and prose that says `normalized_recall@10 is 0.6167` has handed the interpretation
+problem straight back. The configuration-string rule is the same failure in a different place —
+`hybrid+quotas+prefix+rerank` is a label for us, not information for a reader.
+
+**Observed effect.** The improvement was larger than expected, and not only in tone: freed from
+reciting the headline rows, the model spent a finding on the **per-category** split — that
+single-company questions score `normalized_recall@10 = 0.75` against cross-company `0.4875` —
+which is the most decision-relevant fact on the page and was in the payload unmentioned by v1.
+All eight figures verified.
+
+**What to watch.** "Lead with the meaning" is an invitation to overstate, and the guard against
+that is entirely in the rules above it (rule 2, *never claim more than the metric supports*) and
+in the caveat field. The one to watch for is a finding that converts the quota-pinned
+`entity_coverage@20 = 1.0` into "retrieval finds everything". It has not happened across the
+generations run so far; if it does, the fix is a worked negative example in the prompt rather
+than a softer rule, since v1 showed the model follows concrete examples closely.
+
+## Eval-summary prompt v3 — 2026-08-20 — written for a CEO, with the vocabulary moved
+
+**What changed.** The audience was named explicitly — *"Write for a CEO or a CTO reading this
+cold"* — and metric names were **banned from the prose**, with a worked pair of examples:
+
+> Bad: `normalized_recall@10 was 0.6167 with rerank and 0.6053 without.`
+> Good: `Of the filings we had labelled as relevant, the system surfaced about 62% of the ones
+> it could reach.`
+
+Rule 1 gained one permitted computation: a rate may be written as a whole-number percentage
+(`0.6167` → `62%`), which is what makes the plain register possible at all.
+
+And the reply shape changed. A finding is now an object, not a string:
+
+```json
+{"point": "…", "metrics": ["normalized_recall@10"]}
+```
+
+**Why.** v2 was asked to lead with meaning and did, but it still put `normalized_recall@10 =
+0.75` in the sentence, because rule 5 told it to name the metric behind every figure. For the
+reader this page is now aimed at, that identifier is noise — and it was in the *summary*, which
+exists precisely so that a stakeholder does not have to read the table.
+
+But dropping the metric name outright would have cost the thing that makes the summary worth
+trusting: a figure you cannot trace is not checkable. Hence the split. `point` is prose;
+`metrics` is where the vocabulary went, and the page renders it under **Technical numbers**
+beside the table. The traceability did not weaken — it moved.
+
+**What it made worse, and the guard added for it.** The `metrics` field is only worth having if
+it is populated, and nothing in a prompt guarantees that. So `verify_figures` grew two checks
+beyond the original figure test: a point that **quotes a figure and names no metric** is flagged
+as untraced, and a **metric key that does not exist** in the run data is flagged too — the same
+failure class as a fabricated `[C7]`, in a new costume. Both appear on the page and both fail
+the CLI. Parsing stayed lenient (a bare string is accepted as a point with no metrics) so a
+shape mismatch downgrades to a flag rather than throwing away a usable summary.
+
+**Observed effect.** Prose an executive can read, and — unexpectedly — a *better* finding set:
+freed from reciting rows, the model spent one finding on the two-setup comparison being
+inconclusive, which is the most useful thing on the page and something neither v1 nor v2 said.
+
+## Eval-summary prompt v4 — 2026-08-20 — the banned words, with their replacements
+
+**What changed.** Rule 4's word ban became a substitution table rather than a list:
+
+> saturated → "has almost no room left to improve" · directional → "too small to read anything
+> into" · configuration/ablation → "setup" · corpus → "the filings we hold" · chunk → "an
+> extract from a filing" · `k` → "how many results we look at" · `n` → "the number of test
+> questions"
+
+**Why.** v3 banned "directional" and the model wrote *"is just directional and not proof of any
+real gain or loss"* anyway — in the caveat, the one field a hurried reader is most likely to
+read. A prohibition with no replacement leaves the model with a meaning it has to express and
+no sanctioned way to express it, so it reaches for the banned word. The rule also now says
+"including in the caveat", because that is where the leak happened.
+
+**Observed effect.** The banned vocabulary disappeared, and "setup" replaced the raw
+configuration strings without being told to per-instance. Confirms the v1 note that this model
+follows concrete examples far more reliably than it follows rules stated abstractly.
+
+## Eval-summary prompt v5 — 2026-08-20 — `@10` is not "ten results"
+
+**What changed.** One fact added to `HARNESS_FACTS`:
+
+> The `@N` in a metric name is how many filings the *measure* looks at, not how many the system
+> retrieves. Every run here retrieves a budget of 20, and `@10` scores only the first 10
+> distinct filings within that. If you put this into words, get the distinction right — or
+> leave the number of results out of the sentence.
+
+**Why.** v4 glossed `normalized_recall@10` as *"the system surfaced about 62% of the ones it
+could reach **when searching ten per question**"*. Plausible, fluent, and wrong: retrieval
+budget is 20, and the 10 is a property of the metric. Nothing in the pipeline could catch it —
+the figure check verifies numerals, and "ten" is a word; the untraced check verifies a metric
+was named, and one was. **This is the failure mode of plain language**: translating a metric
+into prose is an act of interpretation, and interpretation can be wrong in ways that a check on
+figures cannot see. The fix is to give the model the fact rather than to add a check.
+
+**Observed effect.** The gloss disappeared entirely — v5 wrote "in the top answers it returns"
+and left the number out, which is the option the rule offers and the better sentence.
+
+**The limit this leaves.** Two classes of error remain unmachine-checkable here: a figure
+attributed to the wrong configuration (the numbers are all real, so the check passes), and a
+metric explained wrongly in words. Both are why `docs/EVALUATION.md`'s hand-written metric
+notes stay on the page next to the summary, and why the table is one click away rather than
+absent.
