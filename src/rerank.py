@@ -18,9 +18,6 @@ reading them (the full chunk still reaches the generation call), and since reflo
 512 tokens are a coherent opening rather than an arbitrary window. Re-chunking at ~480 tokens
 was the alternative, and it cuts Item 1A mid-risk-factor — measured median risk factor 607
 tokens, and 17 CFR 229.105(a) makes that the one place a regulator defines the unit.
-
-`jina-reranker-v2-base-multilingual` is **CC-BY-NC-4.0**, so unusable commercially — excluded
-on licence, not on quality.
 """
 
 from __future__ import annotations

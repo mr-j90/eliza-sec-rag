@@ -2,16 +2,16 @@
 #
 # The suite has two tiers, measured rather than assumed (see tests/conftest.py):
 #
-#   280 python tests = 249 that need nothing + 31 that need a live OPENAI_API_KEY.
+#   283 python tests = 252 that need nothing + 31 that need a live OPENAI_API_KEY.
 #   Of those 31, seventeen embed queries and eleven make REAL GENERATION CALLS.
 #   There is no Qdrant-only tier: with Qdrant up and the key removed, all 31 still skip.
-#   Plus 54 frontend tests that need nothing. 334 in total.
+#   Plus 54 frontend tests that need nothing. 337 in total.
 #
 # Counts re-measured 2026-08-20 with the eval-summary work. The frontend figure had drifted
 # (43 tests were reported as 34), which is the argument for measuring rather than incrementing.
 #
 # `make test` deselects the paying tier rather than letting it skip, so the run reports
-# "249 passed, 31 deselected" instead of "249 passed, 31 skipped". The first is a claim you
+# "252 passed, 31 deselected" instead of "252 passed, 31 skipped". The first is a claim you
 # can read; the second is indistinguishable from a suite that quietly tested nothing.
 
 .PHONY: help test test-py test-fe test-live test-all eval eval-summary check typecheck lint up down index answers
@@ -23,9 +23,9 @@ help:  ## Show this help
 	@echo "  The default loop is 'make test'. It needs no Docker and no API key."
 	@echo "  'make test-live' SPENDS MONEY — 11 real generation calls. Opt in deliberately."
 
-test: test-py test-fe  ## Fast loop: 249 python + 54 frontend. No services, no key, no cost
+test: test-py test-fe  ## Fast loop: 252 python + 54 frontend. No services, no key, no cost
 
-test-py:  ## The 249 python tests that need nothing
+test-py:  ## The 252 python tests that need nothing
 	uv run pytest -m "not live" -q
 
 test-fe:  ## The 54 frontend tests (node:test, SQLite is a file)

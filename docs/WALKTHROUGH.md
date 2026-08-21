@@ -185,10 +185,11 @@ that call, the same as a vector search. There is a test that counts the calls on
 three-company question, where per-company quotas issue several vector searches.
 
 **"Why Qdrant?"**
-Fit, and DBSF. **Do not say it is the only store with server-side hybrid fusion** — Weaviate,
-Milvus, Elasticsearch, Vespa and OpenSearch all do it, and anyone who has used one will catch
-that. Qdrant does appear to be the only one shipping distribution-based score fusion, which is
-a real differentiator — though measured here it was not better than RRF.
+Fit: local Docker, one clean Python client, named dense+sparse vectors in one collection, and
+fusion server-side in a single query. **Do not say it is the only store with server-side hybrid
+fusion** — Weaviate, Milvus, Elasticsearch, Vespa and OpenSearch all do it, and anyone who has
+used one will catch that. It also ships distribution-based score fusion, which the others do
+not; measured here it was not better than RRF, so the code runs RRF only.
 
 **"Your recall looks low."**
 The best question to get. `recall@10 = 0.513` against label ceilings that vary from **0.139 to

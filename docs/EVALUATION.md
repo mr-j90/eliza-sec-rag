@@ -208,7 +208,10 @@ Two things worth noting rather than glossing:
   for a little reach. Nothing here is strong enough to prefer it.
 - **DBSF is competitive, not better.** It leads on nDCG by 0.003, which is noise. The
   architecture note speculated score-magnitude fusion might beat rank fusion on a corpus this
-  identifier-dense; measured, it does not. It stays switchable via `RAG_FUSION=dbsf`.
+  identifier-dense; measured, it does not. So the `RAG_FUSION` switch was **removed** and RRF
+  is the only fusion path in the code — a mode nobody selects is a question to answer in a
+  review, not a capability. Re-testing it means restoring one line
+  (`FusionQuery(fusion=Fusion.DBSF)`), which is cheaper than carrying the branch.
 
 ### BM25 parameters were checked, not tuned
 

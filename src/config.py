@@ -42,8 +42,8 @@ SPARSE_MODEL = "Qdrant/bm25"
 RERANK_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
 
 # The RRF ranking constant, set **explicitly** rather than inherited from Qdrant's default of 2
-# — see `retrieve._fusion_query`. `RAG_RRF_K` overrides it; `RAG_FUSION=dbsf` swaps RRF for
-# distribution-based score fusion, so the choice is a measurement (docs/EVALUATION.md).
+# — see `retrieve.build_hybrid_query`. `RAG_RRF_K` overrides it, which ran the 2/10/60/100 sweep
+# in docs/EVALUATION.md was run.
 DEFAULT_RRF_K = 60
 
 COLLECTION = "filings"
@@ -71,7 +71,6 @@ class Settings:
     # produce, and the answer turned out to be interesting (see docs/EVALUATION.md).
     rerank_enabled: bool
     rrf_k: int
-    fusion: str
 
     @property
     def provider_configured(self) -> bool:
@@ -97,5 +96,4 @@ def settings() -> Settings:
         openai_base_url=_env("OPENAI_BASE_URL"),
         rerank_enabled=(_env("RAG_RERANK") or "1") not in {"0", "false", "no"},
         rrf_k=int(_env("RAG_RRF_K") or DEFAULT_RRF_K),
-        fusion=(_env("RAG_FUSION") or "rrf").lower(),
     )

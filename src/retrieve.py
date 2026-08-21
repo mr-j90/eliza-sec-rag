@@ -46,25 +46,6 @@ class Retrieved:
     score: float
 
 
-def _fusion_query() -> models.FusionQuery | models.RrfQuery:
-    """The fusion step, with its constant stated rather than inherited.
-
-    `FusionQuery(fusion=Fusion.RRF)` accepts no ranking constant and Qdrant defaults it to
-    **2** — confirmed by comparing against `RrfQuery(rrf=Rrf(k=2))`, which returns an identical
-    id-set and score multiset. `RrfQuery` is the newer form and does take `k`, so the constant
-    is set explicitly here: a value that only exists as a server default is a value nobody can
-    defend in a review.
-
-    `RAG_FUSION=dbsf` selects distribution-based score fusion, which uses score *magnitude*
-    rather than rank. It can beat RRF when one leg is confidently right — plausible on a corpus
-    this identifier-dense — and Qdrant appears to be the only mainstream store shipping it.
-    """
-    config = settings()
-    if config.fusion == "dbsf":
-        return models.FusionQuery(fusion=models.Fusion.DBSF)
-    return models.RrfQuery(rrf=models.Rrf(k=config.rrf_k))
-
-
 def build_hybrid_query(
     *,
     dense: list[float],
@@ -72,22 +53,18 @@ def build_hybrid_query(
     limit: int,
     query_filter: models.Filter | None = None,
 ) -> dict[str, Any]:
-    """The Qdrant request, as data, so a test can assert on its shape.
-
-    Separated from execution on purpose: "fusion happens server-side over two branches" is a
-    contract with Qdrant, and asserting it through an HTTP response would mean inferring it
-    from results rather than checking it.
-    """
+    """The Qdrant request, as data, so a test can assert its shape rather than infer it from
+    an HTTP response: two prefetches fused server-side is a contract, not an implementation
+    detail."""
+    deep = max(PREFETCH_LIMIT, limit * 2)
     return {
         "prefetch": [
-            models.Prefetch(
-                query=dense, using="dense", limit=max(PREFETCH_LIMIT, limit * 2), filter=query_filter
-            ),
-            models.Prefetch(
-                query=sparse, using="sparse", limit=max(PREFETCH_LIMIT, limit * 2), filter=query_filter
-            ),
+            models.Prefetch(query=dense, using="dense", limit=deep, filter=query_filter),
+            models.Prefetch(query=sparse, using="sparse", limit=deep, filter=query_filter),
         ],
-        "query": _fusion_query(),
+        # `RrfQuery`, not `FusionQuery`: the latter takes no ranking constant and Qdrant
+        # defaults it to 2 — verified, identical id-set and scores to `Rrf(k=2)`.
+        "query": models.RrfQuery(rrf=models.Rrf(k=settings().rrf_k)),
         "limit": limit,
         "query_filter": query_filter,
     }

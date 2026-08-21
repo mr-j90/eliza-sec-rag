@@ -61,25 +61,6 @@ def test_the_ranking_constant_is_explicit_and_not_the_server_default():
     )
 
 
-def test_dbsf_can_be_selected_for_the_ablation(monkeypatch):
-    """Score-magnitude fusion as an alternative to rank fusion (§6.3).
-
-    Kept switchable because "RRF is the robust default" is a claim worth being able to test on
-    this corpus rather than cite.
-    """
-    monkeypatch.setenv("RAG_FUSION", "dbsf")
-    settings.cache_clear()
-    try:
-        query = build_hybrid_query(
-            dense=[0.1] * 8,
-            sparse=models.SparseVector(indices=[1], values=[1.0]),
-            limit=10,
-        )
-        assert query["query"].fusion == models.Fusion.DBSF
-    finally:
-        settings.cache_clear()
-
-
 def test_prefetch_limits_are_wider_than_the_final_limit():
     """Fusion needs candidates to fuse; prefetching k would make RRF a no-op."""
     query = build_hybrid_query(

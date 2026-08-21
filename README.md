@@ -138,7 +138,7 @@ was possible:
 ## Testing
 
 ```bash
-make test          # 249 python + 54 frontend. No Docker, no API key, no cost. ~18s
+make test          # 252 python + 54 frontend. No Docker, no API key, no cost. ~18s
 make test-live     # 31 tests needing a key. 11 make REAL generation calls — costs money
 make check         # typecheck + lint
 make eval          # retrieval metrics over the golden set, then the /evals page summary
@@ -146,7 +146,7 @@ make eval-summary  # just the page summary. One eval-time call, cached
 ```
 
 `make test` **deselects** the paying tier rather than skipping it, so a green run reports
-`249 passed, 31 deselected` — a claim you can read. A suite that quietly skipped its
+`252 passed, 31 deselected` — a claim you can read. A suite that quietly skipped its
 answer-path tests would report green while testing nothing.
 
 `make test-live` refuses to run without a key rather than skipping 31 tests and exiting 0.
@@ -163,7 +163,6 @@ Backend `.env` (repo root):
 | `QDRANT_URL` | `http://127.0.0.1:6533` | not 6333 — see `docker-compose.yml` |
 | `RAG_GENERATION_MODEL` | `gpt-4.1` | the prompt was tuned against this model |
 | `RAG_RRF_K` | `60` | fusion constant, set explicitly |
-| `RAG_FUSION` | `rrf` | `dbsf` for score-magnitude fusion |
 | `RAG_RERANK` | `1` | `0` disables the cross-encoder |
 | `RAG_CORPUS_DIR` | `./edgar_corpus` | |
 
