@@ -256,15 +256,64 @@ In priority order:
 ## Appendix — reproducing
 
 ```bash
-make eval                      # both configurations, ~2 min
+make eval                      # both configurations, ~2 min, then the page summary
 RAG_RERANK=0 make eval         # fusion only
+make eval-summary              # just the page summary, if a run landed without one
 make test-live                 # the 28-test answer-contract gate
 ```
 
 Every run writes its own file to `eval/results/`, named
 `<timestamp>--<config>.json`, plus `latest.json` as a stable path. Runs are **never
 overwritten** — comparing configurations is the whole point of this harness, and every table
-above is a before/after. They are also browsable at **`/evals`** in the front-end. Golden-set labels are **re-derived from the corpus** by
+above is a before/after. They are also browsable at **`/evals`** in the front-end.
+
+### The generated summary on `/evals`
+
+The page leads with a plain-English summary of the runs and keeps every metric behind a
+**Technical numbers** disclosure, because the failure this section documents is a *reading*
+failure: a stakeholder who sees `mrr@10 = 1.0000` in a table concludes the opposite of what §3
+says it means. Putting the numbers one click away and the interpretation on top inverts that.
+
+The summary is written by `src/eval/summarize.py` — **one eval-time model call, cached to
+`eval/results/summary.json`**, so viewing the page makes no call. It is written for a chief
+executive reading it cold: no metric names, no `@k` notation, no configuration strings. A
+representative finding, generated:
+
+> When a question mentions several companies, filings from each of them are included in the
+> evidence for every such question tested.
+
+Five properties make it worth trusting on a page whose whole subject is not over-trusting
+numbers:
+
+- **The caveats above are given to it as facts**, not left to be inferred. The prompt states
+  that normalized recall is the honest figure, that `mrr@10`/`ndcg@10` are saturated, and that
+  `entity_coverage@k` is pinned by the quota design. Its `caveat` field is required output.
+- **Every figure is checked against the run data** before caching. The prompt forbids computing
+  new numbers — a rate may only be re-expressed as a percentage — and each numeral in the
+  generated text must appear in the metrics it was given. Same rule `src/verify.py` applies to
+  citation handles, for the same reason: a number that reads as a measurement and is not one is
+  worse than no number. Failures are **named on the page**, not stripped, and the CLI exits
+  non-zero.
+- **Plain language did not cost traceability, it relocated it.** Each finding is
+  `{point, metrics}` — the sentence, and the metric keys it rests on. The keys render under
+  Technical numbers beside the table, so any claim can still be checked against a row. A point
+  that quotes a figure and names no key is flagged as **untraced**; a key that does not exist in
+  the run data is flagged too, which is the fabricated-`[C7]` failure in another costume.
+- **Staleness is visible.** The cache records which run files it describes; a new run makes the
+  page say so rather than showing prose that quietly predates the table beneath it.
+- **It is not the answer path.** `POST /ask` cannot reach it — asserted, see the README.
+
+**Two limits, stated because they are the honest ones.** The check verifies that every figure
+*exists* in the run data, not that each is attributed to the right configuration — a summary
+that swapped two real numbers between columns would pass. And translating a metric into plain
+words is an act of interpretation that no check on numerals can police: prompt v4 glossed
+`normalized_recall@10` as *"searching ten per question"*, conflating the metric's cutoff with
+the retrieval budget of 20. Fluent, plausible, wrong, and invisible to every automated check
+here. That is why §3's hand-written metric notes stay on the page next to the summary, and why
+the table is one click away rather than absent.
+
+All five versions of that prompt are logged in [`PROMPT_LOG.md`](../PROMPT_LOG.md) — including
+the false positive the figure check produced on its first real run, and the `@10` gloss above. Golden-set labels are **re-derived from the corpus** by
 `eval/build_golden_set.py` and a test re-derives every label at run time — a label that cannot
 be reproduced from the filings fails rather than lingering. Labels written by looking at what
 the current system returns would make every metric a measure of how closely a configuration

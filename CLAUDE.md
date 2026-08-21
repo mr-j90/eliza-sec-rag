@@ -135,6 +135,8 @@ Backend (project root):
 | build index (all 246) | `uv run python -m src.index --all` |
 | rebuild from scratch | `uv run python -m src.index --recreate --all` |
 | serve API | `uv run uvicorn src.api:app --port 8000` |
+| retrieval eval + page summary | `make eval` |
+| page summary only | `make eval-summary` (`--check` variant spends nothing) |
 | lint / typecheck / build | none configured |
 
 Frontend (`frontend/`, verified 2026-08-19 — all four green):
@@ -163,9 +165,37 @@ colliding fails *silently* — a client connects happily and creates its collect
 stranger's instance. `src/index.py` also refuses to write when the target holds collections this
 project did not create.
 
-Still missing: the eval entry points (`eval/run_retrieval_eval.py`, `eval/run_answer_eval.py`)
-and the golden set. When you add them, add their invocations to the table above — a future
-instance has no other way to discover them.
+Eval entry points, as built (the spec's `eval/run_retrieval_eval.py` /
+`eval/run_answer_eval.py` filenames were not used): the golden set is `eval/golden_set.json`,
+re-derived by `eval/build_golden_set.py`; retrieval metrics are `src/eval/metrics.py`
+(`make eval`); the `/evals` page summary is `src/eval/summarize.py` (`make eval-summary`).
+LLM-as-judge answer eval is still absent — the first thing SPEC §10 says to cut.
+
+**`src/eval/summarize.py` holds the one sanctioned exception to the one-call constraint** —
+an eval-time generation call that writes `eval/results/summary.json`, the plain-English summary
+the `/evals` page leads with. It is fenced off structurally, not by convention, and three tests
+in `tests/test_ask.py` keep it that way: call sites are counted per tier, the answer path is
+proved not to import `src/eval/` at all, and the eval-time call sites are named in a list so a
+new one is a deliberate edit. The cache key is `(PROMPT_VERSION, model, run filenames)`, and the
+frontend decides staleness from the same filename set rather than reimplementing a hash. Its
+prompt is versioned in `PROMPT_LOG.md` under `## Eval-summary prompt vN` headings —
+deliberately not `## vN`, which `tests/test_prompt_template.py` reserves for the answer
+prompt's gapless numbering.
+
+**The summary is written for a CEO/CTO and carries no metric names** (prompt v5, 2026-08-20).
+That register is only safe because traceability moved rather than disappeared: a finding is
+`{point, metrics}`, and `verify_figures` enforces three things — no figure absent from the run
+data, no point quoting a figure without naming a metric (**untraced**), no metric key that does
+not exist. All three are flagged on the page and fail the CLI; none is ever stripped. Two
+failures remain outside any check and are documented in `docs/EVALUATION.md`: a real figure
+attributed to the wrong configuration, and a metric *explained* wrongly in words (v4 glossed
+`@10` as "searching ten per question", conflating the metric cutoff with the k=20 budget). The
+hand-written metric notes stay on the page for exactly that reason — do not "tidy" them away
+into the generated summary.
+
+Test counts drift: they are quoted in `Makefile`, `tests/conftest.py` and `README.md`, and were
+wrong in all three by 2026-08-20. Measured that day: **249 python free-tier + 31 live + 54
+frontend = 334**. Re-measure rather than increment.
 
 Source assessment prompt: `../AI-RAG Assessment.pdf` (outside this repo). Branding assets: `../branding/`.
 

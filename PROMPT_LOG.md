@@ -432,3 +432,170 @@ for a fifth of the corpus.
 **Observed effect.** The handles are named correctly (7 of 20 passages on the Tesla quarterly
 question). Not a measurable retrieval change — the retrieval half is what moved those numbers,
 and it is recorded in the ticket rather than here.
+
+---
+
+# The eval-summary prompt
+
+A **second, separate prompt**, in `src/eval/summarize.py`. It writes the plain-English summary
+at the top of the `/evals` page from the metrics in `eval/results/`, and it is versioned here
+because it is a prompt whose failures are worth the same record as the answer prompt's.
+
+Two things keep the two apart. Its headings are `## Eval-summary prompt vN` rather than `## vN`,
+so `tests/test_prompt_template.py`'s no-gaps check over the *answer* prompt's numbering does
+not see them. And this is an **eval-time call**: SPEC §5.2's one-generation-call-per-answer
+constraint covers `POST /ask`, which never reaches this module. Its own version lives in
+`PROMPT_VERSION` and is part of the summary cache key, so editing the prompt invalidates every
+cached summary rather than leaving text on screen that the current prompt would not produce.
+
+## Eval-summary prompt v1 — 2026-08-20 — the caveats are given, not inferred
+
+**What changed.** First version. Three decisions worth naming:
+
+The metric caveats are handed to the model **as established facts** rather than left for it to
+work out — that raw `recall@k` has a 36-fold-varying per-question ceiling, that `mrr@10` and
+`ndcg@10` are saturated, that `entity_coverage@k` is pinned near 1.0 *by the quota design*.
+
+The reply is **structured JSON** (`{headline, findings, caveat}`), not markdown, so the page
+renders it without a markdown pipeline and every field is short enough to check.
+
+And the figure rule is absolute: *use only the numbers in the data given to you, copied exactly
+as they appear; do not compute new figures.* Every numeral in the reply is then checked against
+the payload and named on the page if it is not found there.
+
+**Why.** A model shown ten metrics and no context writes "MRR@10 of 1.0 shows excellent
+ranking" — which is the exact misreading `docs/EVALUATION.md` §3 exists to prevent, now
+rendered above the table in friendly prose where it is more likely to be believed than the
+table itself. The whole point of putting a summary on that page is to stop a reader
+misinterpreting the numbers; a summary that misinterprets them for you is worse than none.
+
+**Observed effect.** Usable on the first generation, and the caveat field did its job — it led
+with the quota-pinning caveat unprompted. The findings, though, mostly restated table rows
+("`entity_coverage@20` is 1.0"), which is not what a stakeholder-facing summary is for. Fixed
+in v2.
+
+**What it made worse — and what it caught.** The strict figure rule produced a **false
+positive** on its first real run: the model wrote "a -0.0114 difference", the checker's regex
+deliberately does not capture the sign, and the unsigned `0.0114` was not among the allowed
+renderings of the payload's `-0.0114`. The prompt was right and the checker was wrong. Fixed by
+allowing the magnitude of a negative payload value, with a test that names the run that found
+it. The lesson generalises: a strict check on generated text will flag correct output, and the
+flag has to be cheap to investigate — which is why the check *names the offending figure* on
+the page rather than reporting a bare pass/fail.
+
+## Eval-summary prompt v2 — 2026-08-20 — lead with the meaning, then the metric
+
+**What changed.** Two rules added:
+
+> **Lead with the meaning, then the metric.** Say what happened in words a reader who has never
+> heard of nDCG would understand, and put the figure in support of it — not the other way round.
+> Write "every company a question named appeared in the retrieved filings
+> (entity_coverage@20 = 1.0)", not "entity_coverage@20 is 1.0". A finding that only restates a
+> row of the table has not been written.
+
+and, in the plain-English rule, *no naming a configuration string in the prose without saying
+what it is ("with the cross-encoder reranking step on", not "hybrid+quotas+prefix")*.
+
+**Why.** v1's findings read as a transcription of the table they sit above, which defeats the
+purpose: the tables are behind a disclosure precisely because most readers of that page do not
+want them, and prose that says `normalized_recall@10 is 0.6167` has handed the interpretation
+problem straight back. The configuration-string rule is the same failure in a different place —
+`hybrid+quotas+prefix+rerank` is a label for us, not information for a reader.
+
+**Observed effect.** The improvement was larger than expected, and not only in tone: freed from
+reciting the headline rows, the model spent a finding on the **per-category** split — that
+single-company questions score `normalized_recall@10 = 0.75` against cross-company `0.4875` —
+which is the most decision-relevant fact on the page and was in the payload unmentioned by v1.
+All eight figures verified.
+
+**What to watch.** "Lead with the meaning" is an invitation to overstate, and the guard against
+that is entirely in the rules above it (rule 2, *never claim more than the metric supports*) and
+in the caveat field. The one to watch for is a finding that converts the quota-pinned
+`entity_coverage@20 = 1.0` into "retrieval finds everything". It has not happened across the
+generations run so far; if it does, the fix is a worked negative example in the prompt rather
+than a softer rule, since v1 showed the model follows concrete examples closely.
+
+## Eval-summary prompt v3 — 2026-08-20 — written for a CEO, with the vocabulary moved
+
+**What changed.** The audience was named explicitly — *"Write for a CEO or a CTO reading this
+cold"* — and metric names were **banned from the prose**, with a worked pair of examples:
+
+> Bad: `normalized_recall@10 was 0.6167 with rerank and 0.6053 without.`
+> Good: `Of the filings we had labelled as relevant, the system surfaced about 62% of the ones
+> it could reach.`
+
+Rule 1 gained one permitted computation: a rate may be written as a whole-number percentage
+(`0.6167` → `62%`), which is what makes the plain register possible at all.
+
+And the reply shape changed. A finding is now an object, not a string:
+
+```json
+{"point": "…", "metrics": ["normalized_recall@10"]}
+```
+
+**Why.** v2 was asked to lead with meaning and did, but it still put `normalized_recall@10 =
+0.75` in the sentence, because rule 5 told it to name the metric behind every figure. For the
+reader this page is now aimed at, that identifier is noise — and it was in the *summary*, which
+exists precisely so that a stakeholder does not have to read the table.
+
+But dropping the metric name outright would have cost the thing that makes the summary worth
+trusting: a figure you cannot trace is not checkable. Hence the split. `point` is prose;
+`metrics` is where the vocabulary went, and the page renders it under **Technical numbers**
+beside the table. The traceability did not weaken — it moved.
+
+**What it made worse, and the guard added for it.** The `metrics` field is only worth having if
+it is populated, and nothing in a prompt guarantees that. So `verify_figures` grew two checks
+beyond the original figure test: a point that **quotes a figure and names no metric** is flagged
+as untraced, and a **metric key that does not exist** in the run data is flagged too — the same
+failure class as a fabricated `[C7]`, in a new costume. Both appear on the page and both fail
+the CLI. Parsing stayed lenient (a bare string is accepted as a point with no metrics) so a
+shape mismatch downgrades to a flag rather than throwing away a usable summary.
+
+**Observed effect.** Prose an executive can read, and — unexpectedly — a *better* finding set:
+freed from reciting rows, the model spent one finding on the two-setup comparison being
+inconclusive, which is the most useful thing on the page and something neither v1 nor v2 said.
+
+## Eval-summary prompt v4 — 2026-08-20 — the banned words, with their replacements
+
+**What changed.** Rule 4's word ban became a substitution table rather than a list:
+
+> saturated → "has almost no room left to improve" · directional → "too small to read anything
+> into" · configuration/ablation → "setup" · corpus → "the filings we hold" · chunk → "an
+> extract from a filing" · `k` → "how many results we look at" · `n` → "the number of test
+> questions"
+
+**Why.** v3 banned "directional" and the model wrote *"is just directional and not proof of any
+real gain or loss"* anyway — in the caveat, the one field a hurried reader is most likely to
+read. A prohibition with no replacement leaves the model with a meaning it has to express and
+no sanctioned way to express it, so it reaches for the banned word. The rule also now says
+"including in the caveat", because that is where the leak happened.
+
+**Observed effect.** The banned vocabulary disappeared, and "setup" replaced the raw
+configuration strings without being told to per-instance. Confirms the v1 note that this model
+follows concrete examples far more reliably than it follows rules stated abstractly.
+
+## Eval-summary prompt v5 — 2026-08-20 — `@10` is not "ten results"
+
+**What changed.** One fact added to `HARNESS_FACTS`:
+
+> The `@N` in a metric name is how many filings the *measure* looks at, not how many the system
+> retrieves. Every run here retrieves a budget of 20, and `@10` scores only the first 10
+> distinct filings within that. If you put this into words, get the distinction right — or
+> leave the number of results out of the sentence.
+
+**Why.** v4 glossed `normalized_recall@10` as *"the system surfaced about 62% of the ones it
+could reach **when searching ten per question**"*. Plausible, fluent, and wrong: retrieval
+budget is 20, and the 10 is a property of the metric. Nothing in the pipeline could catch it —
+the figure check verifies numerals, and "ten" is a word; the untraced check verifies a metric
+was named, and one was. **This is the failure mode of plain language**: translating a metric
+into prose is an act of interpretation, and interpretation can be wrong in ways that a check on
+figures cannot see. The fix is to give the model the fact rather than to add a check.
+
+**Observed effect.** The gloss disappeared entirely — v5 wrote "in the top answers it returns"
+and left the number out, which is the option the rule offers and the better sentence.
+
+**The limit this leaves.** Two classes of error remain unmachine-checkable here: a figure
+attributed to the wrong configuration (the numbers are all real, so the check passes), and a
+metric explained wrongly in words. Both are why `docs/EVALUATION.md`'s hand-written metric
+notes stay on the page next to the summary, and why the table is one click away rather than
+absent.

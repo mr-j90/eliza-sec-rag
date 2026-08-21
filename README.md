@@ -50,11 +50,11 @@ the ones where the right answer is a refusal.
 |---|---|---|
 | 1 | Setup and run instructions | this file |
 | 2 | Indexing and retrieval code | [`src/`](src/) — `ingest` → `chunks` → `embed` → `index`, then `query` → `retrieve` → `rerank` → `prompt` → `llm`, behind `api` |
-| 3 | Log of prompt iterations | [`PROMPT_LOG.md`](PROMPT_LOG.md) — v1→v7, written as each change was made |
+| 3 | Log of prompt iterations | [`PROMPT_LOG.md`](PROMPT_LOG.md) — the answer prompt v1→v7, written as each change was made, plus the separate eval-summary prompt |
 | 4 | Final prompt template | [`docs/PROMPT_TEMPLATE.md`](docs/PROMPT_TEMPLATE.md) — generated from the code, with a test that fails if it drifts |
 | 5 | Front-end | [`frontend/`](frontend/) — Next.js, renders the answer with its sources |
 | 6 | Example request ready to execute | [`example-request.sh`](example-request.sh) |
-| 7 | Notes on how quality was evaluated | [`docs/EVALUATION.md`](docs/EVALUATION.md) |
+| 7 | Notes on how quality was evaluated | [`docs/EVALUATION.md`](docs/EVALUATION.md), and the `/evals` page — a generated summary of every run, with the metrics behind a disclosure |
 
 Design research behind the decisions is in [`docs/research/`](docs/research/), and the
 decision-by-decision record with its measurements is in `.scratch/sec-rag-demo/` — one file per
@@ -107,6 +107,14 @@ at all — `grep -r openai frontend/` returns nothing outside comments — so it
 model call even by accident. The backend has exactly one `complete()` call site. Embedding and
 reranking are retrieval work that happens *before* that call, the same as a vector search.
 
+**One exemption, and it is fenced off.** `src/eval/summarize.py` makes a generation call to
+write the plain-English summary at the top of the `/evals` page. SPEC §5.2 exempts eval-time
+calls, and the exemption is enforced rather than asserted: the call sites are counted per tier,
+the answer path is proved not to import `src/eval/` at all
+(`test_the_answer_path_cannot_reach_the_eval_time_tier`), and the summary is generated from the
+command line and cached to disk, so serving the page makes no model call. It is labelled as
+generated on the page itself, alongside which model wrote it.
+
 Five behaviours exist to stop a confident wrong answer, each because a measurement showed it
 was possible:
 
@@ -130,14 +138,15 @@ was possible:
 ## Testing
 
 ```bash
-make test        # 201 python + 34 frontend. No Docker, no API key, no cost. ~18s
-make test-live   # 31 tests needing a key. 11 make REAL generation calls — costs money
-make check       # typecheck + lint
-make eval        # retrieval metrics over the golden set
+make test          # 249 python + 54 frontend. No Docker, no API key, no cost. ~18s
+make test-live     # 31 tests needing a key. 11 make REAL generation calls — costs money
+make check         # typecheck + lint
+make eval          # retrieval metrics over the golden set, then the /evals page summary
+make eval-summary  # just the page summary. One eval-time call, cached
 ```
 
 `make test` **deselects** the paying tier rather than skipping it, so a green run reports
-`201 passed, 31 deselected` — a claim you can read. A suite that quietly skipped its
+`249 passed, 31 deselected` — a claim you can read. A suite that quietly skipped its
 answer-path tests would report green while testing nothing.
 
 `make test-live` refuses to run without a key rather than skipping 31 tests and exiting 0.

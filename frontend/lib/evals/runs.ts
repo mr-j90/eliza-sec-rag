@@ -17,7 +17,7 @@ import path from "node:path";
  */
 
 /** `eval/results/` at the repo root — one level up from the Next app. */
-const RESULTS_DIR =
+export const RESULTS_DIR =
   process.env.EVAL_RESULTS_DIR ?? path.join(process.cwd(), "..", "eval", "results");
 
 /** Metrics worth putting on screen, in the order they should be read. */
@@ -59,8 +59,9 @@ export type EvalRun = {
 
 function isRunFile(name: string): boolean {
   // `latest.json` is a duplicate of the newest run, kept as a stable path for scripts. Listing
-  // it would show every newest run twice.
-  return name.endsWith(".json") && name !== "latest.json";
+  // it would show every newest run twice. `summary.json` is the cached prose *about* these
+  // runs (see `lib/evals/summary.ts`), not a run.
+  return name.endsWith(".json") && name !== "latest.json" && name !== "summary.json";
 }
 
 /**
@@ -69,10 +70,10 @@ function isRunFile(name: string): boolean {
  * Returns `[]` when the directory does not exist — that is the state before anyone has run
  * `make eval`, and it is not an error. The page says so rather than throwing.
  */
-export async function listRuns(): Promise<EvalRun[]> {
+export async function listRuns(resultsDir: string = RESULTS_DIR): Promise<EvalRun[]> {
   let names: string[];
   try {
-    names = (await readdir(RESULTS_DIR)).filter(isRunFile);
+    names = (await readdir(resultsDir)).filter(isRunFile);
   } catch {
     return [];
   }
@@ -80,7 +81,7 @@ export async function listRuns(): Promise<EvalRun[]> {
   const runs = await Promise.all(
     names.map(async (file) => {
       try {
-        const parsed = JSON.parse(await readFile(path.join(RESULTS_DIR, file), "utf8"));
+        const parsed = JSON.parse(await readFile(path.join(resultsDir, file), "utf8"));
         return { ...parsed, file } as EvalRun;
       } catch {
         // A truncated file — a run killed mid-write — should not take the page down with it.

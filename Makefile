@@ -2,16 +2,19 @@
 #
 # The suite has two tiers, measured rather than assumed (see tests/conftest.py):
 #
-#   232 python tests = 201 that need nothing + 31 that need a live OPENAI_API_KEY.
-#   Of those 29, seventeen embed queries and eleven make REAL GENERATION CALLS.
-#   There is no Qdrant-only tier: with Qdrant up and the key removed, all 29 still skip.
-#   Plus 34 frontend tests that need nothing. 266 in total.
+#   280 python tests = 249 that need nothing + 31 that need a live OPENAI_API_KEY.
+#   Of those 31, seventeen embed queries and eleven make REAL GENERATION CALLS.
+#   There is no Qdrant-only tier: with Qdrant up and the key removed, all 31 still skip.
+#   Plus 54 frontend tests that need nothing. 334 in total.
+#
+# Counts re-measured 2026-08-20 with the eval-summary work. The frontend figure had drifted
+# (43 tests were reported as 34), which is the argument for measuring rather than incrementing.
 #
 # `make test` deselects the paying tier rather than letting it skip, so the run reports
-# "201 passed, 31 deselected" instead of "201 passed, 31 skipped". The first is a claim you
+# "249 passed, 31 deselected" instead of "249 passed, 31 skipped". The first is a claim you
 # can read; the second is indistinguishable from a suite that quietly tested nothing.
 
-.PHONY: help test test-py test-fe test-live test-all eval check typecheck lint up down index answers
+.PHONY: help test test-py test-fe test-live test-all eval eval-summary check typecheck lint up down index answers
 
 help:  ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -20,12 +23,12 @@ help:  ## Show this help
 	@echo "  The default loop is 'make test'. It needs no Docker and no API key."
 	@echo "  'make test-live' SPENDS MONEY — 11 real generation calls. Opt in deliberately."
 
-test: test-py test-fe  ## Fast loop: 201 python + 34 frontend. No services, no key, no cost
+test: test-py test-fe  ## Fast loop: 249 python + 54 frontend. No services, no key, no cost
 
-test-py:  ## The 201 python tests that need nothing
+test-py:  ## The 249 python tests that need nothing
 	uv run pytest -m "not live" -q
 
-test-fe:  ## The 34 frontend tests (node:test, SQLite is a file)
+test-fe:  ## The 54 frontend tests (node:test, SQLite is a file)
 	cd frontend && bun run test
 
 test-live:  ## The 31 that need a key. 11 make REAL generation calls — this costs money
@@ -34,9 +37,14 @@ test-live:  ## The 31 that need a key. 11 make REAL generation calls — this co
 
 test-all: test test-live  ## Everything, including the paying tier
 
-eval:  ## Retrieval metrics over the golden set. Needs Qdrant + a key; embeds 22 queries
+eval: ## Retrieval metrics over the golden set, then the page summary. Needs Qdrant + a key
 	@echo "22 questions, ~2 min. RAG_RERANK=0 for the fusion-only row. See docs/EVALUATION.md."
 	uv run python -m src.eval.metrics
+	@$(MAKE) --no-print-directory eval-summary
+
+eval-summary:  ## The cached plain-English summary the /evals page shows. One eval-time call
+	@echo "One eval-time LLM call over eval/results/ — NOT the answer path. Skipped if current."
+	uv run python -m src.eval.summarize
 
 check: typecheck lint  ## Static checks nothing else currently runs
 
