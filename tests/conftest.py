@@ -3,22 +3,26 @@
 The suite has **two** tiers, measured rather than assumed (ticket 01 got this wrong twice
 before measuring):
 
-- **93 tests need nothing.** No Qdrant, no key. Verified by running the whole suite with
+- **249 tests need nothing.** No Qdrant, no key. Verified by running the whole suite with
   `QDRANT_URL` pointed at a dead port *and* with the key emptied — the same set passed both
-  times. (64 inherited, plus the 29 fixture-verification tests added with this loop.)
-- **29 tests need a live `OPENAI_API_KEY`.** 17 need dense query embeddings, 11 make **real
+  times.
+- **31 tests need a live `OPENAI_API_KEY`.** 17 need dense query embeddings, 11 make **real
   generation calls**, and 1 needs both. There is no Qdrant-only tier: with Qdrant up and the
-  key removed, all 29 still skip.
+  key removed, all 31 still skip.
+
+Counts re-measured 2026-08-20. They are quoted in three places (here, the `Makefile` header,
+`README.md`) and had drifted in all three, which is what happens to a number that is
+incremented by hand rather than read off a run.
 
 Two problems this file solves.
 
-**Silent green.** Left alone, `pytest` runs all 122 and reports "93 passed, 29 skipped" — a
+**Silent green.** Left alone, `pytest` runs all 280 and reports "249 passed, 31 skipped" — a
 green result that tested none of the answer path. Nothing distinguishes "the paying tier was
 deliberately excluded" from "the paying tier quietly did not run." So the tiers are
-*selectable*: `-m "not live"` deselects them and the run reports 93 passed and **0 skipped**,
+*selectable*: `-m "not live"` deselects them and the run reports 249 passed and **0 skipped**,
 which is a claim you can read.
 
-**Silent green, expensively.** `-m live` without a key would skip all 29 and still report
+**Silent green, expensively.** `-m live` without a key would skip all 31 and still report
 green. `RAG_REQUIRE_LIVE=1` turns that into a loud exit instead, so the paying tier cannot
 pass by not running.
 

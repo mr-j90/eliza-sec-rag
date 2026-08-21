@@ -307,31 +307,91 @@ def test_exactly_one_generation_call_reaches_the_provider_sdk(monkeypatch):
     )
 
 
-def test_no_module_other_than_llm_can_produce_an_answer():
-    """One `.complete()` call site, and one `chat.completions` call site, in the whole backend.
+def _call_sites() -> tuple[list[str], list[str], list[str]]:
+    """`(answer-path .complete() sites, eval-time .complete() sites, provider sites)`.
 
-    Asserted rather than left to a grep in the README, because this is the claim the assessment
-    turns on. If a second call site appears, this fails and names the file.
+    `src/eval/` is the eval-time tier, exempt from the one-call constraint by SPEC §5.2 and
+    separated here rather than excluded silently — the two assertions below say different
+    things about the two tiers, and `test_the_answer_path_cannot_reach_the_eval_time_tier`
+    stops the exemption being a back door.
     """
     from pathlib import Path
 
     src = Path(__file__).parent.parent / "src"
     answer_sites: list[str] = []
+    eval_sites: list[str] = []
     provider_sites: list[str] = []
 
     for path in sorted(src.rglob("*.py")):
+        where = eval_sites if path.parent.name == "eval" else answer_sites
         for number, line in enumerate(path.read_text().splitlines(), 1):
             stripped = line.strip()
             if stripped.startswith("#") or stripped.startswith('"'):
                 continue
             if ".complete(" in stripped and "def complete" not in stripped:
-                answer_sites.append(f"{path.relative_to(src)}:{number}")
+                where.append(f"{path.relative_to(src)}:{number}")
             if "chat.completions.create" in stripped:
                 provider_sites.append(f"{path.relative_to(src)}:{number}")
+
+    return answer_sites, eval_sites, provider_sites
+
+
+def test_no_module_other_than_llm_can_produce_an_answer():
+    """One `.complete()` call site in the answer path, and one `chat.completions` site anywhere.
+
+    Asserted rather than left to a grep in the README, because this is the claim the assessment
+    turns on. If a second call site appears, this fails and names the file.
+
+    The provider assertion covers **everything**, eval-time code included: SPEC §2 puts all
+    provider access behind `src/llm.py` so a swap is a one-file change, and an eval script that
+    reached for the SDK directly would break that regardless of how it is labelled.
+    """
+    answer_sites, _, provider_sites = _call_sites()
 
     assert answer_sites == ["api.py:130"] or len(answer_sites) == 1, (
         f"expected exactly one answer call site, found {answer_sites}"
     )
     assert len(provider_sites) == 1, (
         f"expected exactly one chat-completions call site, found {provider_sites}"
+    )
+
+
+def test_the_answer_path_cannot_reach_the_eval_time_tier():
+    """The eval-time exemption is structural, not a convention.
+
+    `src/eval/` may make generation calls — the golden-set summary on the `/evals` page is one —
+    and SPEC §5.2 exempts them. That exemption is only worth anything if the answer path cannot
+    *reach* those call sites: an import of `src.eval` from `src/api.py` would put a second
+    generation call one function call away from `POST /ask` while every assertion above still
+    passed. So the direction of dependency is asserted, not assumed.
+    """
+    from pathlib import Path
+
+    src = Path(__file__).parent.parent / "src"
+    offenders = [
+        f"{path.relative_to(src)}:{number}"
+        for path in sorted(src.rglob("*.py"))
+        if path.parent.name != "eval"
+        for number, line in enumerate(path.read_text().splitlines(), 1)
+        if ("import src.eval" in line or "from src.eval" in line)
+        and not line.strip().startswith("#")
+    ]
+
+    assert not offenders, (
+        f"the answer path imports the eval-time tier at {offenders}. src/eval/ is allowed to "
+        "make generation calls; the answer path must not be able to reach them."
+    )
+
+
+def test_every_eval_time_call_site_goes_through_the_one_provider_door():
+    """Eval-time calls are exempt from the one-call rule, not from the provider abstraction.
+
+    Each site is named here so a new one is a deliberate edit to this list rather than a silent
+    addition — the same reason `PROMPT_LOG.md` versions the summary prompt.
+    """
+    _, eval_sites, _ = _call_sites()
+
+    assert [site.split(":")[0] for site in eval_sites] == ["eval/summarize.py"], (
+        f"unexpected eval-time generation call site(s): {eval_sites}. Add it here deliberately, "
+        "and make sure it routes through src/llm.py rather than the SDK."
     )
