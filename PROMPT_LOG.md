@@ -433,6 +433,52 @@ for a fifth of the corpus.
 question). Not a measurable retrieval change — the retrieval half is what moved those numbers,
 and it is recorded in the ticket rather than here.
 
+## v8 — 2026-08-21 — a figure carries the scale its passage states
+
+**What changed.** A sixth grounding rule, standing rather than conditional:
+
+> 6. A row of values separated by `|` is a row of a financial table, and a scale caption in the
+>    same passage — `(in millions)`, `($ in thousands)` — states the scale of the figures in it.
+>    Give a figure with the scale its own passage states. Where a passage states no scale, give
+>    the figure as it appears and say the scale is not stated. Never assume one.
+
+**Why.** Financial tables are roughly **46% of the index** (Item 8 Financial Statements 30%,
+10-Q Item 1 Financial Statements 16%), and they reach the model as pipe-delimited rows:
+`iPhone® | $ | 39,669 | ... | $ | 156,778 |`. The ingest path works hard to keep those rows
+meaningful — `_bind_table_context` re-attaches the scale caption and period header to any
+window cut below them, from the filing's own lines. Measured 2026-08-21 across
+`AAPL_10Q_2023Q3`, `AAPL_10K_2025-10-31` and `NVDA_10K_2022Q1`: **96 figure-bearing chunks, 4
+with no scale caption**, and three of those four are false positives (two exhibit-index rows
+where `| 4.1 |` looks like a figure, one share count), leaving **one** genuine unscaled table
+continuation.
+
+So the caption is almost always *present*. Until now nothing in the prompt said what to do with
+it: the five existing rules never mention tables, and rule 5 only forbids inventing a figure.
+Units on screen were an outcome the model happened to produce, not a rule it was held to — and
+a revenue figure with no scale is the one kind of wrong number a reader catches instantly.
+
+**Why the second half is the rule.** "State the units" on its own invites the model to supply
+units it was not given, turning a missing scale into a confidently wrong one. That is the same
+trade `_bind_table_context` already makes at ingest, where it walks back at most two narrative
+lines rather than risk bolting a *thousands* caption onto *millions* figures. A wrong scale
+reads as authoritative; a missing one does not.
+
+**Observed effect — a floor, not a fix.** Measured against v7 on the same two questions, same
+index, before and after:
+
+- *"How has NVIDIA's revenue and growth outlook changed over the last two years?"* —
+  **no material change.** v7 already gave every figure as `$60.9 billion`, `$35.1 billion`,
+  `$116.2 billion`. The rule bought nothing here because nothing was wrong here.
+- *"What is the breakdown of Apple's marketable securities by investment category?"* — the
+  question that retrieves raw table rows. v7 stated `(in millions)` once, parenthetically, in a
+  lead-in sentence. v8 states it in **Bottom line** and again beside the figures
+  ("at fair value, in millions", "the figures are presented in millions of dollars").
+
+The honest summary is that this rule enforces what the model was mostly already doing, and
+makes the scale explicit where the figures are rawest. It is worth keeping as a guard rather
+than as an improvement: the failure it prevents is silent, and one bare figure in a diligence
+answer costs more than four lines of prompt.
+
 ---
 
 # The eval-summary prompt

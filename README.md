@@ -138,7 +138,7 @@ was possible:
 ## Testing
 
 ```bash
-make test          # 252 python + 54 frontend. No Docker, no API key, no cost. ~18s
+make test          # 253 python + 54 frontend. No Docker, no API key, no cost. ~18s
 make test-live     # 31 tests needing a key. 11 make REAL generation calls — costs money
 make check         # typecheck + lint
 make eval          # retrieval metrics over the golden set, then the /evals page summary
@@ -146,7 +146,7 @@ make eval-summary  # just the page summary. One eval-time call, cached
 ```
 
 `make test` **deselects** the paying tier rather than skipping it, so a green run reports
-`252 passed, 31 deselected` — a claim you can read. A suite that quietly skipped its
+`253 passed, 32 deselected` — a claim you can read. A suite that quietly skipped its
 answer-path tests would report green while testing nothing.
 
 `make test-live` refuses to run without a key rather than skipping 31 tests and exiting 0.

@@ -58,6 +58,25 @@ def test_the_template_carries_the_live_version_and_every_required_section():
     assert SYSTEM in rendered, "the system message must appear verbatim, not paraphrased"
 
 
+def test_the_grounding_rules_say_what_to_do_with_a_table_figure():
+    """v8. Both halves, because the second one is the rule.
+
+    Financial tables are ~46% of the index and arrive as pipe-delimited rows, so a figure's
+    scale sits in a caption rather than beside it. "State the units" alone would invite the
+    model to supply units it was not given — a missing scale becoming a confident wrong one.
+    Asserted on substance rather than phrasing, like the rest of this file.
+    """
+    assert "|" in SYSTEM and "table" in SYSTEM.lower(), (
+        "nothing tells the model a pipe-delimited row is a financial table"
+    )
+    assert re.search(r"in millions|in thousands", SYSTEM), (
+        "the scale caption's own wording should be shown, not described"
+    )
+    assert re.search(r"no scale|not stated", SYSTEM) and "assume" in SYSTEM, (
+        "the guard is missing: an unstated scale must be reported, never assumed"
+    )
+
+
 def test_the_log_has_an_entry_for_the_live_version():
     """The version the system reports must be explained somewhere a reader can find.
 

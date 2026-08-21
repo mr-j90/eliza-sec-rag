@@ -1,4 +1,4 @@
-# Final prompt template — `v7`
+# Final prompt template — `v8`
 
 **Generated from `src/prompt.py`. Do not edit by hand** — `tests/test_prompt_template.py`
 regenerates this file and fails on any difference, so it cannot drift from the prompt the
@@ -39,6 +39,10 @@ Grounding rules, in order of precedence:
 4. Never present a hedge as a finding or a finding as a hedge. If the evidence is thin, say
    it is thin.
 5. Do not name a company, ticker or figure that does not appear in the context.
+6. A row of values separated by `|` is a row of a financial table, and a scale caption in the
+   same passage — `(in millions)`, `($ in thousands)` — states the scale of the figures in it.
+   Give a figure with the scale its own passage states. Where a passage states no scale, give
+   the figure as it appears and say the scale is not stated. Never assume one.
 
 Follow the output format given at the end of the user message exactly.
 ```

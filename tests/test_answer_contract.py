@@ -139,6 +139,27 @@ def test_every_answer_carries_the_always_required_sections(answers):
             )
 
 
+def test_a_figure_answer_states_the_scale_its_figures_are_in(answers):
+    """Prompt v8, on the generation this fixture already makes — no extra call.
+
+    The temporal question is answered from pipe-delimited table rows, where the scale lives in
+    a `(in millions)` caption rather than beside the number. `$130.5` with no scale anywhere is
+    off by a factor of a thousand or a million and reads exactly as authoritative as the
+    correct figure.
+
+    Coarse on purpose: it asserts the answer names a scale *somewhere* when it quotes currency,
+    not that every figure carries one adjacently. Filings state a scale once per table, so a
+    per-figure check would fail on an answer that correctly did the same.
+    """
+    answer = answers[PANEL_TEMPORAL]["answer"]
+    if not re.search(r"\$\s?\d", answer):
+        pytest.skip("this generation quoted no currency figures")
+    assert re.search(r"million|billion|thousand|percent|%|scale is not stated", answer, re.I), (
+        "currency figures are quoted with no scale named anywhere in the answer:\n"
+        f"{answer[:600]}"
+    )
+
+
 # --- citations still resolve, one call per question ---
 
 

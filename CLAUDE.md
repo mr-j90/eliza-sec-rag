@@ -194,7 +194,7 @@ hand-written metric notes stay on the page for exactly that reason — do not "t
 into the generated summary.
 
 Test counts drift: they are quoted in `Makefile`, `tests/conftest.py` and `README.md`, and were
-wrong in all three by 2026-08-20. Measured 2026-08-21: **252 python free-tier + 31 live + 54 frontend = 337**. Re-measure rather
+wrong in all three by 2026-08-20. Measured 2026-08-21: **253 python free-tier + 32 live + 54 frontend = 339**. Re-measure rather
 than increment.
 
 Source assessment prompt: `../AI-RAG Assessment.pdf` (outside this repo). Branding assets: `../branding/`.

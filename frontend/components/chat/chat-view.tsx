@@ -81,11 +81,25 @@ export function ChatView({
   // The server owns the conversation id, but the client has to remember it
   // between the first and second message of a new chat.
   const [id, setId] = useState(conversationId);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const lastQuestionRef = useRef<HTMLDivElement>(null);
+  const firstPaint = useRef(true);
 
-  // Keep the newest turn in view as messages arrive.
+  // Pin the newest question to the top of the transcript — deliberately not the bottom.
+  // An answer here is five sections plus a sources panel, so scrolling to the end of the
+  // transcript landed the reader *past* everything they asked for and left them scrolling
+  // back up to read it. Pinning the question puts the answer's first line under it instead.
+  //
+  // Runs on every message change, including the answer replacing the placeholder: at send
+  // time the transcript is too short to move the question far, and the arriving answer is
+  // what makes the room.
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    lastQuestionRef.current?.scrollIntoView({
+      // No animation on the first paint: opening a conversation from the sidebar would
+      // otherwise animate down through the whole transcript.
+      behavior: firstPaint.current ? "instant" : "smooth",
+      block: "start",
+    });
+    firstPaint.current = false;
   }, [messages]);
 
   async function send(text: string) {
@@ -150,6 +164,13 @@ export function ChatView({
     }
   }
 
+  // The turn the view pins to. `reduce` rather than `findLastIndex` to stay inside the
+  // project's TS lib target.
+  const lastQuestion = messages.reduce(
+    (last, m, i) => (m.role === "user" ? i : last),
+    -1,
+  );
+
   // Empty state: centered hero with the composer and suggested prompts.
   if (messages.length === 0) {
     return (
@@ -170,13 +191,14 @@ export function ChatView({
 
   return (
     <main className="mx-auto flex h-[calc(100vh-4rem)] w-full max-w-3xl flex-col px-6 pb-6">
-      <div
-        ref={scrollRef}
-        className="no-scrollbar flex-1 space-y-6 overflow-y-auto py-6"
-      >
+      <div className="no-scrollbar flex-1 space-y-6 overflow-y-auto py-6">
         {messages.map((m, i) =>
           m.role === "user" ? (
-            <div key={i} className="flex justify-end">
+            <div
+              key={i}
+              ref={i === lastQuestion ? lastQuestionRef : undefined}
+              className="flex scroll-mt-6 justify-end"
+            >
               <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-primary px-4 py-2.5 text-sm text-primary-foreground">
                 {m.content}
               </div>

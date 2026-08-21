@@ -3,7 +3,7 @@
 The suite has **two** tiers, measured rather than assumed (ticket 01 got this wrong twice
 before measuring):
 
-- **252 tests need nothing.** No Qdrant, no key. Verified by running the whole suite with
+- **253 tests need nothing.** No Qdrant, no key. Verified by running the whole suite with
   `QDRANT_URL` pointed at a dead port *and* with the key emptied — the same set passed both
   times.
 - **31 tests need a live `OPENAI_API_KEY`.** 17 need dense query embeddings, 11 make **real
@@ -16,10 +16,10 @@ incremented by hand rather than read off a run.
 
 Two problems this file solves.
 
-**Silent green.** Left alone, `pytest` runs all 283 and reports "252 passed, 31 skipped" — a
+**Silent green.** Left alone, `pytest` runs all 285 and reports "253 passed, 32 skipped" — a
 green result that tested none of the answer path. Nothing distinguishes "the paying tier was
 deliberately excluded" from "the paying tier quietly did not run." So the tiers are
-*selectable*: `-m "not live"` deselects them and the run reports 252 passed and **0 skipped**,
+*selectable*: `-m "not live"` deselects them and the run reports 253 passed and **0 skipped**,
 which is a claim you can read.
 
 **Silent green, expensively.** `-m live` without a key would skip all 31 and still report
