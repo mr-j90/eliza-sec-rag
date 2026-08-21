@@ -14,8 +14,10 @@ from src.chunks import Chunk
 from src.config import settings
 from src.index import ensure_indexed
 from src.retrieve import (
+    PER_FILE_CAP,
     Retrieved,
     build_hybrid_query,
+    file_diverse,
     retrieve,
     suppress_near_duplicates,
 )
@@ -236,6 +238,48 @@ def test_live_results_contain_no_near_duplicates(indexed):
     assert len(suppress_near_duplicates(results)) == len(results), (
         "retrieve() returned near-duplicates; suppression is not being applied"
     )
+
+
+# --- file-diversity selection (2026-08-21) ---
+
+
+def in_file(source_file: str, score: float = 1.0) -> Retrieved:
+    """A Retrieved carrying only the field file_diverse cares about: its source_file."""
+    chunk = chunk_from(f"chunk from {source_file} @ {score}")
+    return Retrieved(
+        chunk=Chunk(**{**chunk.__dict__, "source_file": source_file}), score=score
+    )
+
+
+def test_file_diverse_spreads_slots_across_filings():
+    """With filings to spare, each slot goes to a distinct filing — the recall fix.
+
+    Ten candidates from three filings must not spend all ten slots on filing A; a file-level
+    label counts filings, and a comparison the reader trusts wants breadth."""
+    ranked = [in_file("a.txt")] * 5 + [in_file("b.txt")] * 3 + [in_file("c.txt")] * 2
+    picked = file_diverse(ranked, limit=3, cap=PER_FILE_CAP)
+    assert {r.chunk.source_file for r in picked} == {"a.txt", "b.txt", "c.txt"}
+
+
+def test_file_diverse_respects_the_per_file_cap_before_a_second_pass():
+    """Pass one takes one chunk per filing; only then may a filing take a second (up to cap)."""
+    ranked = [in_file("a.txt", 3), in_file("a.txt", 2), in_file("b.txt", 1)]
+    picked = file_diverse(ranked, limit=3, cap=2)
+    files = [r.chunk.source_file for r in picked]
+    assert files == ["a.txt", "b.txt", "a.txt"], (
+        "b.txt must win the second slot over a.txt's second chunk"
+    )
+
+
+def test_file_diverse_degrades_to_cap_rather_than_returning_short():
+    """One filing, three candidates, cap=2: fill two slots, not one and not three."""
+    ranked = [in_file("a.txt", 3), in_file("a.txt", 2), in_file("a.txt", 1)]
+    assert len(file_diverse(ranked, limit=5, cap=2)) == 2
+
+
+def test_file_diverse_never_exceeds_the_limit():
+    ranked = [in_file(f"{i}.txt") for i in range(50)]
+    assert len(file_diverse(ranked, limit=20, cap=PER_FILE_CAP)) == 20
 
 
 # --- corpus-scale checks ---
