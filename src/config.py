@@ -37,19 +37,13 @@ DENSE_DIM = 1536
 SPARSE_MODEL = "Qdrant/bm25"
 
 # Cross-encoder reranker, run locally through FastEmbed like the BM25 leg — no API, no key.
-# apache-2.0, 0.08 GB, and the fastest of the four candidates at 328 ms for 20 passages.
-# Every FastEmbed reranker truncates at 512 tokens (measured, see src/rerank.py), so this was
-# chosen on latency and licence rather than on window. `jina-reranker-v2-base-multilingual` is
-# CC-BY-NC-4.0 and therefore unusable commercially.
+# apache-2.0, 0.08 GB, fastest of four candidates at 328 ms for 20 passages. Chosen on latency
+# and licence, not window: see `src/rerank.py` for the measured 512-token truncation.
 RERANK_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
 
-# The RRF ranking constant, set **explicitly**. Qdrant's `FusionQuery(RRF)` defaults to 2 —
-# verified empirically, not read off a changelog: `RrfQuery(rrf=Rrf(k=2))` returns an identical
-# id-set and score multiset. Prior art ran that default while its prose claimed the Cormack et
-# al. "k=60", which is the kind of prose/code disagreement that gets caught in a demo.
-#
-# `RAG_RRF_K` overrides it, and `RAG_FUSION=dbsf` swaps RRF for distribution-based score fusion.
-# Both exist so the choice is a measurement rather than a citation — see docs/EVALUATION.md.
+# The RRF ranking constant, set **explicitly** rather than inherited from Qdrant's default of 2
+# — see `retrieve._fusion_query`. `RAG_RRF_K` overrides it; `RAG_FUSION=dbsf` swaps RRF for
+# distribution-based score fusion, so the choice is a measurement (docs/EVALUATION.md).
 DEFAULT_RRF_K = 60
 
 COLLECTION = "filings"

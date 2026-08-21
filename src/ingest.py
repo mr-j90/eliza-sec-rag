@@ -4,35 +4,21 @@ SPEC §4: section-aware first, then recursive at ~800 tokens with ~15% overlap, 
 paragraph then sentence boundaries, with a whole-document fallback when item headers don't
 parse.
 
-Every rule below was found by measuring the corpus, not by anticipating it. Each cost a
-wrong result first, and the comments say which one:
+The pipeline: `parse_header` → `fiscal_period` → `_strip_boilerplate` → `_section_spans` →
+`_reflow` → `_windows` → `_bind_table_context`.
 
-1. **Metadata lives in a plain-text header block**, terminated by a `====` separator — not in
-   `manifest.json` and not in the filing body. `Report Period:` is absent from 54 of the 246
-   filings, and the fiscal year must **not** fall back to the filing-date year for them — see
-   `fiscal_period`, where doing so mislabelled 37 filings and skewed every relative temporal
-   question.
-2. **Item headers are not line-anchored.** They run together mid-line, so an `^Item` regex
-   finds only the table of contents on much of the corpus.
-3. **Three kinds of impostor look like a section header** and each needs its own rule: TOC
-   rows (the line ends in `| <page>`), quoted cross-references (`“Item 1A. Risk Factors”`
-   mid-sentence), and the trailing exhibit index that re-lists every item at the end.
-4. **Coverage is not optional.** Sections are matched in document order, and everything the
-   matcher does not claim is still chunked under `UNLABELLED`. An earlier version kept only
-   the text *between* detected headers, and McDonald's FY2025 10-K — whose only matches were
-   in its trailing index — lost 99% of its content while reporting six tidy sections.
-5. **Block boundaries were deleted by the HTML converter and have to be reconstructed.**
-   Measured across eight representative filings, 0 of 55 sections contained a single blank
-   line, and 88.8% of chunks fused two blocks together — 3.6% of them across an `ITEM`
-   header, putting two sections under one label. See `_reflow`.
+Every rule here was found by measuring the corpus, not by anticipating it, and each cost a
+wrong result first. The evidence is stated once, at the rule it justifies — not summarised
+here as well, because two copies of a measurement is how one of them goes stale.
 """
 
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 
-from src.chunks import Chunk, count_tokens
+from src.chunks import Chunk, count_tokens, encoding
 from src.config import settings
 
 TARGET_TOKENS = 800
@@ -125,6 +111,28 @@ def parse_header(raw: str) -> tuple[dict[str, str], int]:
         if value.strip():
             fields[key.strip().lower()] = value.strip()
     return fields, match.end()
+
+
+# Enough to clear the header block and its `=` separator, including the `URL:` line that
+# `fiscal_period` falls back to.
+_HEADER_BYTES = 4000
+
+
+@lru_cache(maxsize=1)
+def filing_headers() -> tuple[dict[str, str], ...]:
+    """Every filing's header block, parsed once per process.
+
+    One scan serves the three things derived from it — the alias table, the corpus fiscal-year
+    range and the per-ticker filing census. Three separate scans is what let `query.py` grow
+    its own copy of `fiscal_period` and drift a year off.
+    """
+    headers = []
+    for path in sorted(settings().corpus_dir.glob("*.txt")):
+        with path.open(encoding="utf-8", errors="replace") as handle:
+            fields, _ = parse_header(handle.read(_HEADER_BYTES))
+        if fields:
+            headers.append(fields)
+    return tuple(headers)
 
 
 # The canonical SEC document name embeds the period end: `aapl-20250927.htm`. Not always
@@ -575,11 +583,11 @@ def _windows(text: str) -> list[str]:
 
 
 def _hard_split(text: str) -> list[str]:
-    encoding = __import__("tiktoken").get_encoding("cl100k_base")
-    tokens = encoding.encode(text, disallowed_special=())
+    encoder = encoding()
+    tokens = encoder.encode(text, disallowed_special=())
     step = TARGET_TOKENS - int(TARGET_TOKENS * OVERLAP_RATIO)
     return [
-        encoding.decode(tokens[i : i + TARGET_TOKENS]) for i in range(0, len(tokens), step)
+        encoder.decode(tokens[i : i + TARGET_TOKENS]) for i in range(0, len(tokens), step)
     ]
 
 

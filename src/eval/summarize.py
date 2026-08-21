@@ -4,33 +4,22 @@
     uv run python -m src.eval.summarize --check   # exit 1 if stale, spend nothing
     uv run python -m src.eval.summarize --force   # regenerate regardless
 
-**This is an eval-time LLM call and it is not part of the answer path.** SPEC §5.2 allows
-exactly one generation call per answer; eval-time calls are exempt but must be labelled
-wherever they appear (see `src/llm.py`). Nothing here is reachable from `POST /ask` — this
-module is imported by nothing in the answer path, runs from the command line, and writes a
-file. The API never calls it and the frontend only reads what it wrote.
+**This is an eval-time LLM call and it is not part of the answer path.** SPEC §5.2 exempts
+eval-time calls from the one-call constraint but requires them labelled wherever they appear.
+Nothing in the answer path imports this module, and three tests in `tests/test_ask.py` keep it
+that way rather than leaving it to convention.
 
-Three shapes here are deliberate.
+Three shapes are deliberate:
 
-**The summary is generated in Python, not in the frontend.** The Next app makes no provider
-calls of its own and has no `openai` dependency — `grep -rn openai frontend/lib frontend/app`
-is clean, which is what makes the one-call constraint structural rather than conventional
-(D001). A summary generated server-side in the app would have quietly ended that. So the call
-lives here and the page reads a file.
-
-**The output is structured, not markdown.** `{headline, findings, caveat}` renders as plain
-JSX with no markdown pipeline, and — the real reason — every field is short enough that each
-figure in it can be checked against the run data. Free prose would have to be trusted.
-
-Each finding is `{point, metrics}`: the sentence a chief executive reads, and the metric keys it
-rests on. The prompt (v3) forbids metric names in the prose, so `metrics` is where the
-vocabulary went — the page shows it in the technical section. It is also what keeps a plainly
-worded claim checkable: a point quoting "62%" and naming no metric is flagged.
-
-**Every figure is verified against the payload before the summary is cached.** Same rule as
-`src/verify.py` applies to citations: a number that looks like a measurement but is not one is
-worse than no number, because it reads as provenance. The check flags rather than strips —
-unverified figures are named in the cache file and on the page, and the CLI exits non-zero.
+- **Generated in Python, not in the frontend.** The Next app has no `openai` dependency at all,
+  which is what makes the one-call constraint structural (D001). A summary generated in the app
+  would have quietly ended that, so the call lives here and the page reads a file.
+- **Structured output, not markdown.** `{headline, findings, caveat}` renders as plain JSX, and
+  every field is short enough that each figure in it can be checked. Free prose would have to be
+  trusted. Each finding is `{point, metrics}` — the sentence a chief executive reads, and the
+  metric keys it rests on, which is where prompt v3 moved the vocabulary it banned from the prose.
+- **Every figure is verified before the summary is cached**, and **flagged rather than stripped**
+  — same rule `src/verify.py` applies to citations. The CLI exits non-zero; the page shows it.
 """
 
 from __future__ import annotations
@@ -39,7 +28,7 @@ import argparse
 import json
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -177,19 +166,10 @@ Reply with JSON only, no code fence, exactly this shape:
 
 @dataclass(frozen=True)
 class Finding:
-    """One observation, and the metric keys it rests on.
-
-    The split is the whole point of the v3 prompt: `point` is written for a chief executive and
-    carries no metric names, while `metrics` carries the vocabulary that was taken out of it.
-    The page renders `point` at the top and `metrics` in its technical section, so the claim is
-    still traceable to a row of the table without the prose reading like one.
-    """
+    """One observation, and the metric keys it rests on."""
 
     point: str
     metrics: tuple[str, ...] = ()
-
-    def as_dict(self) -> dict[str, Any]:
-        return {"point": self.point, "metrics": list(self.metrics)}
 
 
 @dataclass(frozen=True)
@@ -199,13 +179,6 @@ class Summary:
     headline: str
     findings: tuple[Finding, ...]
     caveat: str
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "headline": self.headline,
-            "findings": [f.as_dict() for f in self.findings],
-            "caveat": self.caveat,
-        }
 
     @property
     def text(self) -> str:
@@ -300,10 +273,9 @@ def newest_per_config(runs: list[RunDoc]) -> list[tuple[str, RunDoc, str]]:
 def build_payload(runs: list[RunDoc]) -> dict[str, Any]:
     """The facts the summary may draw on. Nothing else is available to the model.
 
-    Deliberately includes the derived counts — `n_configurations`, `n_flagged_questions` — even
-    though they are trivially computable. The figure check is strict about numerals, so a count
-    the model would otherwise have to derive has to be given to it, or an accurate summary gets
-    flagged for stating one.
+    Includes derived counts (`n_configurations`, `n_flagged_questions`) even though they are
+    trivially computable: the figure check is strict about numerals, so a count the model would
+    otherwise derive has to be given to it or an accurate summary gets flagged for stating it.
     """
     columns = newest_per_config(runs)
     configurations = []
@@ -451,17 +423,11 @@ def known_metric_keys(payload: Any) -> set[str]:
 def verify_figures(summary: Summary, payload: Any) -> Verification:
     """Check the summary against the run data: figures, and whether claims stay traceable.
 
-    Three things can go wrong, and each is **flagged, never stripped**. A summary with an
-    unexplained number is still shown — with the number named — because silently removing it
-    would leave prose that reads identically whether or not the check ran.
-
-    1. **A figure that appears in no run.** The original reason this function exists.
-    2. **A figure with no metric named.** The v3 prompt moved metric names out of the prose and
-       into each finding's `metrics` field, which is what makes the summary readable. That trade
-       only holds if the field is actually populated: a point quoting `62%` and citing nothing
-       is a number a reader cannot check, which is the failure this whole page guards against.
-    3. **A metric key that does not exist.** A citation to `normalized_recall@15` looks
-       authoritative and resolves to nothing — the same class of failure as a fabricated `[C7]`.
+    Three failures, each **flagged, never stripped** — an unexplained number is still shown, with
+    the number named, because removing it silently leaves prose that reads identically whether or
+    not the check ran. A figure in no run; a figure with no metric named (the v3 trade only holds
+    if `metrics` is populated); and a metric key that does not exist, which is the same class of
+    failure as a fabricated `[C7]`.
     """
     allowed = allowed_figures(payload)
     known = known_metric_keys(payload)
@@ -592,7 +558,7 @@ def build_document(
             "POST /ask, and nothing in the answer path imports src/eval/summarize.py. Every "
             "numeral was checked against the run data; see verification."
         ),
-        "summary": summary.as_dict(),
+        "summary": asdict(summary),
         "verification": verification.as_dict(),
     }
 

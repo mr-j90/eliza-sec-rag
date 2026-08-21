@@ -5,9 +5,8 @@ produced. `GET /health` reports which model would answer and whether the index i
 so the frontend can label the UI from the backend rather than keeping a second, driftable
 copy of the same fact.
 
-Both the provider and the retriever are injected as dependencies. That is not ceremony: it
-lets the shape-and-one-call tests run offline against substitutes, while the live retrieval
-behaviour is exercised where it belongs, in `tests/test_retrieve.py`.
+The provider and the retriever are injected so the shape-and-one-call tests run offline against
+substitutes; live retrieval behaviour is exercised in `tests/test_retrieve.py`.
 """
 
 from __future__ import annotations
@@ -20,8 +19,8 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from src import index, prompt
-from src.coverage import coverage_of
-from src.verify import verify_citations
+from src.coverage import Coverage, coverage_of
+from src.verify import CitationCheck, verify_citations
 from src.config import settings
 from src.llm import LLM, ProviderNotConfigured, build_llm
 from src.query import QueryPlan, fiscal_year_range, plan
@@ -87,6 +86,45 @@ def health() -> dict[str, Any]:
     }
 
 
+def _meta(
+    query_plan: QueryPlan,
+    *,
+    n_chunks: int,
+    coverage: Coverage,
+    check: CitationCheck,
+    latency: dict[str, float],
+    generated: bool,
+    top_score: float | None = None,
+) -> dict[str, Any]:
+    """`retrieval_meta`, in one place so the answering and no-match paths cannot drift.
+
+    `entities_detected` is SPEC §8's field: tickers in the order the question named them.
+    `unresolved_mentions` are capitalised names that look like companies but are not in this
+    corpus — heuristic, and only ever used to explain a refusal.
+
+    `generated=False` omits `generation_model`, because nothing generated that answer. The
+    field is what the UI labels an answer with, and labelling a refusal with a model that was
+    never called would be the same class of lie the citation contract exists to prevent.
+    """
+    meta: dict[str, Any] = {
+        "entities_detected": query_plan.companies,
+        "unresolved_mentions": query_plan.unresolved_mentions,
+        "fiscal_years": list(query_plan.fiscal_years) if query_plan.fiscal_years else None,
+        "form_type": query_plan.form_type,
+        "n_chunks": n_chunks,
+        "coverage": coverage.as_dict(),
+        "citation_check": check.as_dict(),
+        "prompt_version": prompt.PROMPT_VERSION,
+        "retrieval": retrieval_description(),
+        "latency_ms": latency,
+    }
+    if generated:
+        meta["generation_model"] = settings().generation_model
+    if top_score is not None:
+        meta["top_score"] = round(top_score, 4)
+    return meta
+
+
 @app.post("/ask")
 def ask(
     request: AskRequest,
@@ -104,11 +142,9 @@ def ask(
     retrieved_at = time.perf_counter()
 
     if not results:
-        # Two different failures used to share one message, and it named the wrong one. An
-        # empty result with a populated index means the question's own scope excluded
-        # everything — a year the corpus does not cover, most often — and telling that reader
-        # to rebuild the index sends them after a problem they do not have. Worse, on a demo
-        # it reads as the system being broken when it is behaving exactly as designed.
+        # Two failures used to share one message, and it named the wrong one: an empty result
+        # with a populated index means the question's own scope excluded everything, and telling
+        # that reader to rebuild the index sends them after a problem they do not have.
         if index_size == 0:
             raise HTTPException(
                 status_code=503,
@@ -121,9 +157,7 @@ def ask(
 
     chunks = [result.chunk for result in results]
 
-    # Computed once and used twice: given to the model so its prose can hedge in proportion to
-    # the evidence, and returned in `retrieval_meta` so the UI renders an authoritative copy
-    # the model cannot garble. The rendered copy is the one to trust.
+    # Computed once, used twice — see `src/coverage.py`.
     coverage = coverage_of(chunks, named=query_plan.companies)
 
     # The one LLM call. Everything above this line is deterministic — SPEC §5.2.
@@ -151,27 +185,19 @@ def ask(
     return {
         "answer": answer,
         "citations": [asdict(citation) for citation in cited],
-        "retrieval_meta": {
-            # SPEC §8's field, populated at last. Tickers in the order the question named
-            # them; `unresolved_mentions` are capitalised names that look like companies but
-            # are not in this corpus — heuristic, and only ever used to explain a refusal.
-            "entities_detected": query_plan.companies,
-            "unresolved_mentions": query_plan.unresolved_mentions,
-            "fiscal_years": list(query_plan.fiscal_years) if query_plan.fiscal_years else None,
-            "form_type": query_plan.form_type,
-            "n_chunks": len(chunks),
-            "coverage": coverage.as_dict(),
-            "citation_check": check.as_dict(),
-            "generation_model": settings().generation_model,
-            "prompt_version": prompt.PROMPT_VERSION,
-            "retrieval": retrieval_description(),
-            "top_score": round(results[0].score, 4),
-            "latency_ms": {
+        "retrieval_meta": _meta(
+            query_plan,
+            n_chunks=len(chunks),
+            coverage=coverage,
+            check=check,
+            generated=True,
+            top_score=results[0].score,
+            latency={
                 "retrieval": round((retrieved_at - started) * 1000, 1),
                 "generation": round((finished - retrieved_at) * 1000, 1),
                 "total": round((finished - started) * 1000, 1),
             },
-        },
+        ),
     }
 
 
@@ -198,25 +224,20 @@ def _no_matches(
         "answer": answer,
         "citations": [],
         "retrieval_meta": {
-            "entities_detected": query_plan.companies,
-            "unresolved_mentions": query_plan.unresolved_mentions,
-            "fiscal_years": list(query_plan.fiscal_years) if query_plan.fiscal_years else None,
-            "form_type": query_plan.form_type,
-            "n_chunks": 0,
-            "coverage": coverage_of([], named=query_plan.companies).as_dict(),
-            # Vacuously verified, and true: no handle was written, so none can be fabricated.
-            "citation_check": verify_citations(answer, []).as_dict(),
-            # No `generation_model`: nothing generated this. The field is what the UI labels an
-            # answer with, and labelling this one with a model that was never called would be
-            # the same class of lie as the citation contract exists to prevent.
-            "prompt_version": prompt.PROMPT_VERSION,
-            "retrieval": retrieval_description(),
+            **_meta(
+                query_plan,
+                n_chunks=0,
+                coverage=coverage_of([], named=query_plan.companies),
+                # Vacuously verified, and true: no handle was written, so none can be fabricated.
+                check=verify_citations(answer, []),
+                generated=False,
+                latency={
+                    "retrieval": round((retrieved_at - started) * 1000, 1),
+                    "generation": 0.0,
+                    "total": round((retrieved_at - started) * 1000, 1),
+                },
+            ),
             "no_matches": True,
-            "latency_ms": {
-                "retrieval": round((retrieved_at - started) * 1000, 1),
-                "generation": 0.0,
-                "total": round((retrieved_at - started) * 1000, 1),
-            },
         },
     }
 

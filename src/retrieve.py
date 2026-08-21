@@ -1,13 +1,12 @@
 """Hybrid retrieval — the seam where fusion is observable.
 
-SPEC §5.4: dense and sparse are fused by **Reciprocal Rank Fusion, server-side, in one
-Qdrant query**. Rank-based fusion is the point: it never has to reconcile cosine similarity
-(0-1, tight variance) against BM25 scores (unbounded, corpus-dependent). Normalising those
-two scales against each other is fragile and is where naive hybrid implementations break
-quietly — they keep returning results, just worse ones.
+SPEC §5.4: dense and sparse are fused by **Reciprocal Rank Fusion, server-side, in one Qdrant
+query**. Rank-based fusion is the point: it never has to reconcile cosine similarity (0-1,
+tight variance) against BM25 scores (unbounded, corpus-dependent), which is where naive hybrid
+implementations break quietly — they keep returning results, just worse ones.
 
-`k=60` is the Cormack et al. default and is left at the default deliberately rather than
-tuned against a 25-question golden set. Qdrant owns that constant server-side.
+The pipeline is fetch-deep → bound → rerank → spread; each step is a constant below, stated
+with the measurement that set it.
 """
 
 from __future__ import annotations
@@ -95,21 +94,10 @@ def build_hybrid_query(
 
 
 def _to_chunk(payload: dict[str, Any]) -> Chunk:
-    return Chunk(
-        chunk_id=payload["chunk_id"],
-        text=payload["text"],
-        company=payload["company"],
-        ticker=payload["ticker"],
-        cik=payload["cik"],
-        form_type=payload["form_type"],
-        fiscal_year=payload["fiscal_year"],
-        period_end=payload.get("period_end", ""),
-        filing_date=payload.get("filing_date", ""),
-        item_section=payload["item_section"],
-        chunk_index=payload["chunk_index"],
-        source_file=payload["source_file"],
-        token_count=payload["token_count"],
-    )
+    """Payload back to `Chunk`. `index.py` writes every field via `asdict`, so this is the
+    exact inverse — a stale collection missing a field fails loudly here rather than
+    defaulting it to something that reads as real."""
+    return Chunk(**payload)
 
 
 SHINGLE = 5
@@ -221,11 +209,7 @@ def _search(
 ) -> list[Retrieved]:
     """One filtered hybrid search. Takes pre-computed vectors so a quota run embeds once.
 
-    The pipeline is fetch-deep, bound, rerank, spread — each step is a constant above with its
-    measurement. Fusion fetches `k * CANDIDATE_POOL` candidates because the filings a spread-out
-    question needs rank deep in fusion; the rerank input is then cut to `RERANK_CAP` *file-
-    diverse* chunks so the cross-encoder still sees a chunk from each deep-ranked filing without
-    being handed the whole pool; and the final cut spreads k across filings (`PER_FILE_CAP`).
+    Fetch-deep, bound, rerank, spread — see the constants above for why each is where it is.
     """
     query = build_hybrid_query(
         dense=dense, sparse=sparse, limit=k * CANDIDATE_POOL, query_filter=query_filter
@@ -280,22 +264,16 @@ def _scope_filter(
 def _form_scope(form_type: str) -> models.Filter | models.FieldCondition:
     """The form filter — which lets the 10-K risk-factor baseline through a 10-Q scope.
 
-    A 10-Q's Item 1A carries only *material changes* from the 10-K. Measured, a question
-    scoped to quarterly filings ("What are Tesla's quarterly risk factors?") retrieved **7
-    chunks and 5,372 tokens** of amendments with no baseline at all, and Pfizer's case was **1
-    chunk, 562 tokens** — presented as a complete risk profile against an annual section past
-    10,000 tokens.
+    A 10-Q's Item 1A is an amendment, not a risk profile (`Chunk.is_incremental_risk_factors`).
+    Measured: "What are Tesla's quarterly risk factors?" retrieved **7 chunks, 5,372 tokens** of
+    amendments with no baseline; Pfizer's case was **1 chunk, 562 tokens** against an annual
+    section past 10,000.
 
-    Note this is a *narrow* trigger, not a general problem: with no form filter the 10-K's
-    Item 1A is ~5x larger and so yields ~5x more chunks, and it dominates retrieval naturally.
-    The failure only appears when the question's own wording restricts the form. So the filter
-    is relaxed for exactly that case rather than the quota design being reworked.
-
-    Widening a scope the user asked for needs justifying: the reader asked about quarterly
-    filings and gets some annual passages. It is the right trade because the alternative is an
-    answer that is confidently incomplete, and because the annual passages are labelled — the
-    prompt says which are baseline and which are amendments (v7), so a "new this quarter"
-    claim cannot be made about a long-standing risk.
+    A *narrow* trigger, not a general problem — unfiltered, the 10-K's Item 1A is ~5x larger and
+    dominates retrieval anyway, so only a question whose own wording restricts the form is
+    affected. Widening a scope the reader asked for is the right trade here because the
+    alternative is a confidently incomplete answer, and because prompt v7 labels which passages
+    are baseline and which are amendments.
     """
     scoped = models.FieldCondition(
         key="form_type", match=models.MatchValue(value=form_type)
@@ -324,21 +302,15 @@ def _form_scope(form_type: str) -> models.Filter | models.FieldCondition:
 def retrieve_for(question: str, k: int = 20) -> list[Retrieved]:
     """Retrieve for a question, honouring the companies, period and form it asked about.
 
-    **Why quotas rather than one global search.** A comparative question against a global
-    top-k returns whichever company writes the most vivid prose — measured before this
-    existed, "Apple, Tesla and JPMorgan" came back JPMorgan 15, Tesla 3, Apple 1 of 20, which
-    satisfies "every company is represented" and cannot answer the question. Per-company
-    budgets guarantee representation instead of hoping for it.
+    **Why quotas rather than one global search.** Measured before this existed, "Apple, Tesla
+    and JPMorgan" against a global top-k came back JPMorgan 15, Tesla 3, Apple 1 of 20 — every
+    company represented, and the question unanswerable.
 
-    Three properties worth stating because each was a way to get this wrong:
-
-    - **The budget is shared, not multiplied.** *n* companies get `k/n` each, so three
-      companies still return ~k passages rather than 3k and blow the context budget.
-    - **The query is embedded once.** The dense vector is identical across the per-company
-      searches, and that round trip is what dominates retrieval latency.
-    - **Suppression runs per company, before the merge.** Over a merged set it can delete a
-      company's entire quota, and that failure looks exactly like the imbalance quotas exist
-      to fix.
+    Three properties, each a way this was got wrong: the budget is **shared** (`k/n` each, so
+    three companies return ~k passages, not 3k); the query is **embedded once** (that round trip
+    dominates retrieval latency); and near-duplicate suppression runs **per company, before the
+    merge**, because over a merged set it can delete a company's whole quota — which looks
+    exactly like the imbalance quotas exist to fix.
     """
     query_plan = plan(question)
 

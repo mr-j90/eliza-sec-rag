@@ -1,13 +1,11 @@
 """The prompt and context assembly.
 
-Iterations are logged in `PROMPT_LOG.md`, which SPEC §6 treats as a graded deliverable rather
-than a byproduct — every change to `SYSTEM` gets an entry there, written when the change is
-made.
+Every version is logged in `PROMPT_LOG.md` — SPEC §6 treats it as a graded deliverable, and
+`tests/test_prompt_template.py` fails if `PROMPT_VERSION` has no entry there or if the numbering
+has a gap. The history lives there and nowhere else: this docstring once narrated v2 while the
+code ran v4, which is the drift that made the log a test rather than a habit.
 
-**v2** adds SPEC §6's five-part answer contract and makes the refusal explicit rather than
-incidental. v1's rules were right and are unchanged in substance; what changed is that the
-answer now has a shape a reader can scan, and that the prompt is *told* which named companies
-are absent instead of being left to notice.
+`docs/PROMPT_TEMPLATE.md` is generated from this module by `render_template()`.
 """
 
 from __future__ import annotations
@@ -81,11 +79,9 @@ class Citation:
     company: str
     form_type: str
     fiscal_year: int
-    # The period the filing reports on, e.g. "2025-10-26". Added in v5 alongside
-    # `fiscal_year` rather than replacing it: the year still drives filtering, but the
-    # *period* is what gets displayed, because a bare "FY2025" contradicts the excerpt for
-    # any issuer whose fiscal year does not end in December (18 of 54 here). Empty for the
-    # one filing whose period end is not recoverable.
+    # The period the filing reports on, e.g. "2025-10-26". Added in v5 alongside `fiscal_year`
+    # rather than replacing it: the year drives filtering, the period is what gets displayed.
+    # See `_label`. Empty for the one filing whose period end is not recoverable.
     period_end: str
     section: str
     source_file: str
@@ -139,15 +135,15 @@ def citations(chunks: list[Chunk]) -> list[Citation]:
     ]
 
 
-# When the question named companies and **none** of them are in the corpus, the honest answer
-# is a refusal and nothing else. Retrieval still returns twenty passages — it has no way not to
-# — and they will be about companies nobody asked about. Measured before this existed: "What is
-# Shopify's China exposure?" refused correctly and then wrote findings for Amazon, Bank of
-# America, Cisco, Goldman Sachs and six others, quoting BofA's China exposure to the dollar.
+# When the question named companies and **none** are in the corpus, the honest answer is a
+# refusal and nothing else — retrieval still returns twenty passages about companies nobody
+# asked about. Measured before this existed: "What is Shopify's China exposure?" refused
+# correctly and then wrote findings for Amazon, Bank of America, Cisco, Goldman Sachs and six
+# others, quoting BofA's exposure to the dollar.
 #
-# The distinction is three-way. A question naming *no* company (a sector question) is not a
-# refusal case at all — it should answer over whatever was retrieved, and that is the
-# behaviour most at risk from getting this rule wrong.
+# The distinction is three-way: a question naming *no* company is a sector question, not a
+# refusal, and answering it over whatever was retrieved is the behaviour most at risk from
+# getting this rule wrong.
 _REFUSE_ONLY = """The question asks about {absent}, and this corpus contains no filings for {pronoun}. The passages above are about other companies and are **not** what was asked about.
 
 Reply with only two sections:
@@ -170,18 +166,14 @@ def no_matches_answer(
 ) -> str:
     """The answer when retrieval returned nothing but the index is populated.
 
-    Written **in code, with no model call**. A question scoped to a period this corpus does not
-    cover — "what did Apple disclose about the iPhone in 2010?" — used to reach the reader as
-    `503 Nothing was retrieved. The index may be empty`, which is both alarming and wrong: the
-    index held 30,383 chunks and the year filter excluded all of them. `query.py` deliberately
-    honours an out-of-range year rather than widening it ("an empty result the reader can
-    understand beats a silent answer about a different period"), and this is the readable
-    result that intention was missing.
+    Written **in code, with no model call**: zero passages is the one case where a generated
+    answer could only come from the model's own knowledge of these companies, which rule 1 of
+    `SYSTEM` forbids. The one-call constraint is a ceiling, not a quota.
 
-    There is no LLM call because there is nothing to ground one in. Zero passages is the one
-    case where a generated answer could only come from the model's own knowledge of these
-    companies, which rule 1 of `SYSTEM` forbids. The one-call constraint is a ceiling, and
-    spending the call here would buy an unverifiable paragraph.
+    A question scoped to a period this corpus does not cover — "what did Apple disclose about the
+    iPhone in 2010?" — used to reach the reader as `503 Nothing was retrieved. The index may be
+    empty`, which was both alarming and wrong: the index held 30,383 chunks and the year filter
+    excluded all of them.
     """
     scope = _scope_phrase(companies, fiscal_years, form_type)
     asked = (
@@ -345,14 +337,9 @@ def user_prompt(
 
 # --- the rendered template, as a deliverable ---------------------------------------------
 #
-# The brief asks for "your final prompt template" as its own deliverable, and the prompt lives
-# here as code — a reader would otherwise have to assemble `SYSTEM` plus `user_prompt` in their
-# head to see what the model receives.
-#
-# So it is **generated**, never transcribed. `docs/PROMPT_TEMPLATE.md` is the committed output
-# of `render_template()`, and a test regenerates it and fails on any difference. A prompt doc
-# maintained by hand drifts from the prompt within a day, and a drifted one is worse than none:
-# it describes a system that no longer exists while looking authoritative.
+# The brief asks for "your final prompt template" as its own deliverable. It is **generated**,
+# never transcribed: `docs/PROMPT_TEMPLATE.md` is the committed output of `render_template()`,
+# and `tests/test_prompt_template.py` regenerates it and fails on any difference.
 
 _ILLUSTRATIVE = (
     (

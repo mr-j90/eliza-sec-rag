@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from src.config import settings
+from src.ingest import filing_headers
 
 # Corporate suffixes carry no identifying information and get in the way of matching a question
 # that says "Apple" against a filing that says "Apple Inc". Stripped from the *alias*, never
@@ -29,8 +29,6 @@ _SUFFIXES = re.compile(
     r")\b\.?",
     re.IGNORECASE,
 )
-
-_HEADER_BYTES = 400
 
 # Two characters or fewer is a ticker's business, not a name fragment's: `co`, `at` and `jp`
 # are not company names, and a two-letter alias colliding with a real ticker would shadow it.
@@ -81,13 +79,10 @@ def normalise(text: str) -> str:
 def by_ticker() -> dict[str, str]:
     """`{"AAPL": "Apple Inc", ...}` — the company name exactly as the filings write it."""
     names: dict[str, str] = {}
-    for path in sorted(settings().corpus_dir.glob("*.txt")):
-        with path.open(encoding="utf-8", errors="replace") as handle:
-            head = handle.read(_HEADER_BYTES)
-        company = re.search(r"^Company:\s*(.+)$", head, re.MULTILINE)
-        ticker = re.search(r"^Ticker:\s*(.+)$", head, re.MULTILINE)
+    for header in filing_headers():
+        company, ticker = header.get("company", ""), header.get("ticker", "")
         if company and ticker:
-            names.setdefault(ticker.group(1).strip(), company.group(1).strip())
+            names.setdefault(ticker, company)
     return names
 
 
@@ -95,27 +90,21 @@ def by_ticker() -> dict[str, str]:
 def aliases() -> dict[str, str]:
     """`{normalised alias: ticker}`.
 
-    Each company contributes its ticker, its full name, its name without corporate suffixes,
-    and every *distinctive* word of that name — so "JPMorgan", "JPMorgan Chase & Co.", "Chase"
-    and "JPM" all resolve to `JPM`. "Distinctive" is doing real work: see `DESCRIPTORS`.
-
-    A collision is resolved in favour of the ticker: `V` is Visa's ticker, and if some other
-    company's shortened name normalised to `v` it must not shadow it.
+    Each company contributes its ticker, its full name, its name without corporate suffixes, and
+    every *distinctive* word of that name — so "JPMorgan", "JPMorgan Chase & Co.", "Chase" and
+    "JPM" all resolve to `JPM`. A collision goes to the ticker: `V` is Visa, and another
+    company's shortened name normalising to `v` must not shadow it.
     """
     companies = by_ticker()
 
-    # People say "JPMorgan", not "JPMorgan Chase & Co." — SPEC §5.2 names that exact case. So
-    # **any** distinctive word of a multi-word name becomes an alias, not just the leading one,
-    # and only when it identifies a single issuer: "general" belongs to both General Electric
-    # and General Motors, and a dictionary that guessed between them would silently retrieve
-    # the wrong issuer.
+    # **Any** distinctive word of a multi-word name, not just the leading one, and only when it
+    # identifies a single issuer — "general" belongs to both General Electric and General Motors.
     #
-    # Leading-word-only was the shipped rule and it was wrong in both directions. Too narrow:
-    # "The Walt Disney Company" yielded `walt disney` and `walt` but not **disney**, so the
-    # commonest way to name a company with 17 filings here — and the phrasing of the golden
-    # set's own temporal question — resolved to nothing and ran as an unfiltered search.
-    # Measured 2026-08-20, the same gap hit Lilly, Chase, Hathaway, Sachs and Mobil. Too
-    # loose: see `DESCRIPTORS`.
+    # Leading-word-only was the shipped rule and was wrong both ways. Too narrow: "The Walt
+    # Disney Company" yielded `walt disney` and `walt` but not **disney**, so the commonest way
+    # to name a company with 17 filings here — and the phrasing of the golden set's own temporal
+    # question — resolved to nothing and ran unfiltered. Measured 2026-08-20, the same gap hit
+    # Lilly, Chase, Hathaway, Sachs and Mobil. Too loose: see `DESCRIPTORS`.
     distinctive: dict[str, set[str]] = {}
     for ticker, company in companies.items():
         words = normalise(company).split()

@@ -48,11 +48,11 @@ class Chunk:
 
 
 @lru_cache(maxsize=1)
-def _encoding():
+def encoding():
+    """The tokeniser, loaded once. cl100k_base is what text-embedding-3-small uses, so
+    "800 tokens" means the same thing here as it does at the embedder."""
     import tiktoken
 
-    # cl100k_base is what text-embedding-3-small uses, so "800 tokens" means the same
-    # thing here as it does at the embedder.
     return tiktoken.get_encoding("cl100k_base")
 
 
@@ -64,7 +64,7 @@ RISK_FACTOR_SECTIONS = frozenset(
 
 
 def count_tokens(text: str) -> int:
-    return len(_encoding().encode(text, disallowed_special=()))
+    return len(encoding().encode(text, disallowed_special=()))
 
 
 def contextual_prefix(chunk: Chunk) -> str:

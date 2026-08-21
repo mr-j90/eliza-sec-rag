@@ -1,13 +1,11 @@
 """Rule-based query understanding. **No LLM, by construction.**
 
-SPEC §5.2 requires that everything before the answer be deterministic: entity extraction,
-time scope and form hints are rules over text, so the system provably makes exactly one
-model call. An LLM query-rewriter would probably improve recall and is deliberately excluded
-— it belongs in the roadmap, and an interviewer will check the constraint.
+SPEC §5.2 requires everything before the answer to be deterministic: entity extraction, time
+scope and form hints are rules over text, so the system provably makes exactly one model call.
+An LLM query-rewriter would probably improve recall and is deliberately excluded.
 
-Nothing in this module imports a provider or touches the network. That is the property, not
-an implementation detail: if this ever needs a service, the one-call story has broken
-upstream of the answer.
+Nothing here imports a provider or touches the network, and `tests/test_ask.py` asserts it —
+if this module ever needs a service, the one-call story has broken upstream of the answer.
 """
 
 from __future__ import annotations
@@ -17,45 +15,33 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from src.aliases import DESCRIPTORS, aliases, by_ticker, normalise
-from src.config import settings
-from src.ingest import fiscal_period, parse_header
+from src.ingest import filing_headers, fiscal_period
 
 
 @lru_cache(maxsize=1)
 def fiscal_year_range() -> tuple[int, int]:
     """`(earliest, newest)` fiscal year in the corpus, read from filing headers.
 
-    Relative time expressions anchor to the **newest** of these, not to `date.today()`. The corpus is a
-    fixed snapshot (SPEC §9 lists that as an honest limitation), so "the last two years"
-    means the last two years of available filings. Anchored to the clock, this question
-    would quietly return nothing the year after the snapshot stops being current — the
-    worst kind of failure, because the answer would still look confident.
+    Relative time expressions anchor to the **newest** of these, not to `date.today()`. The
+    corpus is a fixed snapshot (SPEC §9 lists that as an honest limitation), so "the last two
+    years" means the last two years of available filings. Anchored to the clock, this question
+    would quietly return nothing the year after the snapshot stops being current — the worst
+    kind of failure, because the answer would still look confident.
 
-    The earliest is returned alongside it so an answer can say what the corpus actually
-    covers when a question asks for a period outside it — one scan, one derivation.
+    The earliest is returned alongside it so an answer can say what the corpus actually covers
+    when a question asks for a period outside it.
 
-    The derivation is `ingest.fiscal_period`, deliberately shared rather than reimplemented.
-    This function used to read `Report Period or Filing Date` itself — its own copy of the
-    bug ticket 15 fixed — and returned **2026** for a corpus whose newest period ends in
-    2025. Every relative temporal question was anchored a year too high, so "the last two
-    years" asked for [2025, 2026] and matched only one year of filings. Two derivations of
-    one number is what allowed that to go unnoticed.
+    The derivation is `ingest.fiscal_period` over `ingest.filing_headers`, deliberately shared
+    rather than reimplemented. This function used to read `Report Period or Filing Date` itself
+    — its own copy of the bug ticket 15 fixed — and returned **2026** for a corpus whose newest
+    period ends in 2025, anchoring every relative temporal question a year too high.
     """
-    years: list[int] = []
-    for path in settings().corpus_dir.glob("*.txt"):
-        with path.open(encoding="utf-8", errors="replace") as handle:
-            # Enough to clear the header block and its `=` separator; the URL line that
-            # `fiscal_period` falls back to lives inside it.
-            head = handle.read(4000)
-        fields, _ = parse_header(head)
-        if fields:
-            years.append(fiscal_period(fields)[1])
+    years = [fiscal_period(header)[1] for header in filing_headers()]
     return (min(years), max(years)) if years else (0, 0)
 
 
 LATEST_FISCAL_YEAR = fiscal_year_range()[1]
-"""The year relative expressions anchor to. Both ends come from one derivation, for the reason
-the docstring above gives: the bug it describes was two functions computing the same number."""
+"""The year relative expressions anchor to."""
 
 
 @dataclass(frozen=True)
@@ -209,14 +195,13 @@ def _companies_in(question: str) -> tuple[list[str], list[str]]:
 
 
 def _record_unresolved(words: list[str], into: list[str]) -> None:
-    """A capitalised name we do not hold — recorded so an answer can name what it cannot
-    speak about. Heuristic on purpose, and never used to suppress an answer.
+    """A capitalised name we do not hold, recorded so an answer can name what it cannot speak
+    about (see `QueryPlan.unresolved_mentions`).
 
-    A **single** word that `aliases` refuses to promote to an alias is dropped: "Bank",
-    "Technologies", "International" identify no company, and reporting one as absent puts a
-    line in the answer saying this corpus holds no filings for "Technologies". Only when it
-    stands alone — "General Motors" is two words and must still be named, because naming what
-    it cannot speak about is the whole point of this list.
+    A **single** word that `aliases` refuses to promote is dropped: "Bank", "Technologies",
+    "International" identify no company, and reporting one as absent puts a line in the answer
+    saying this corpus holds no filings for "Technologies". Only when it stands alone, though —
+    "General Motors" is two words and must still be named.
     """
     if len(words) == 1 and normalise(words[0]) in DESCRIPTORS:
         return

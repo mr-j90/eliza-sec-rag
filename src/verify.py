@@ -1,22 +1,17 @@
 """Citation handles, checked rather than trusted.
 
-The whole value proposition of this system is that every claim is traceable to a filing. A
-`[C7]` in an answer where only six passages were retrieved is a **false claim of
-groundedness** — strictly worse than no citation, because it looks like provenance.
+A `[C7]` in an answer where six passages were retrieved is a **false claim of groundedness** —
+worse than no citation, because it looks like provenance.
 
-Measured across thirteen saved runs before this existed: **zero fabricated handles.** So this
-is not fixing a live defect. It exists because "every citation resolves" is the claim the
-system is built on, and a claim that is checked is worth more than one that has merely held so
-far. It also makes the count on screen a *verified* count rather than a reported one.
+Measured across thirteen saved runs before this existed: **zero fabricated handles**, so this
+fixes no live defect. It exists because "every citation resolves" is the claim the system is
+built on, and it makes the count on screen a verified one rather than a reported one.
 
-**Flag, do not strip.** Removing a bad handle produces clean prose and silently edits the
-model's answer; a stripped answer looks identical whether or not the check ran. Surfacing the
-failure is both more honest and the better demo — it proves the check exists.
+**Flag, do not strip.** A stripped answer reads identically whether or not the check ran.
 
-**A refusal cites nothing, and that is correct.** The refusal path deliberately emits two
-sections and no handles, over twenty retrieved passages that are all about companies nobody
-asked about. Treating that as a failure would penalise the single most important behaviour in
-the system.
+**A refusal cites nothing, and that is correct** — the refusal path emits two sections and no
+handles over twenty passages about companies nobody asked about. Failing that would penalise the
+most important behaviour in the system.
 """
 
 from __future__ import annotations

@@ -1,14 +1,3 @@
-# Qdrant for the filings index.
-#
-# NOTE for anyone starting fresh: this creates an EMPTY collection. Build the index with
-# `make index` (~15 min, ~$0.40 of embedding calls) before asking a question. `make answers`
-# will otherwise return 503 with a message saying exactly that, rather than an empty answer.
-#
-# The host port is deliberately NOT 6333. Another project on this machine runs its
-# own Qdrant there, and the failure mode of colliding is silent rather than loud:
-# a client pointed at localhost:6333 connects happily and creates its collection
-# inside a stranger's instance. Nothing errors; the data is just in the wrong
-# place. `QDRANT_URL` is required rather than defaulted for the same reason.
 services:
   qdrant:
     image: qdrant/qdrant:v1.19.0

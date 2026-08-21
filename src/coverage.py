@@ -10,23 +10,22 @@ Two design commitments, both from measurement.
 
 **The unit is distinct filings, never passages.** On ticket 01's run of that question the
 context held five Merck passages from *one* filing and three Lilly passages from *one*.
-Reporting passage counts would overstate the evidence base five-fold in exactly the case
-where honesty matters most.
+Passage counts would overstate the evidence base five-fold in exactly the case where honesty
+matters most.
 
-**Retrieved-of-available, not just retrieved.** `MRK 1 of 1` says the corpus had nothing
-better; `JNJ 4 of 17` says retrieval chose four of seventeen. The first is a limit of the
-data, the second a limit of the budget, and conflating them tells the reader the wrong thing
-about what a follow-up question could fix.
+**Retrieved-of-available, not just retrieved.** `MRK 1 of 1` is a limit of the data; `JNJ 4 of
+17` is a limit of the budget. Conflating them tells the reader the wrong thing about what a
+follow-up question could fix.
 
-This is computed once and used twice — passed into the prompt so the model's prose can hedge
-honestly, and returned in `retrieval_meta` so the UI renders an authoritative copy the model
-cannot garble. The rendered copy is the one to trust.
+Computed once and used twice: passed into the prompt so its prose can hedge honestly, and
+returned in `retrieval_meta` so the UI renders a copy the model cannot garble. The rendered copy
+is the one to trust.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 
 from src.chunks import Chunk
@@ -102,17 +101,7 @@ class Coverage:
     def as_dict(self) -> dict[str, object]:
         """The structured form for `retrieval_meta`, so the UI need not parse prose."""
         return {
-            "companies": [
-                {
-                    "ticker": c.ticker,
-                    "company": c.company,
-                    "passages": c.passages,
-                    "filings_retrieved": c.filings_retrieved,
-                    "filings_in_corpus": c.filings_in_corpus,
-                    "periods": list(c.periods),
-                }
-                for c in self.companies
-            ],
+            "companies": [asdict(c) for c in self.companies],
             "thin": list(self.thin),
             "named_but_absent": list(self.named_but_absent),
             "sentence": self.sentence(),
@@ -124,18 +113,13 @@ def filings_by_ticker() -> dict[str, int]:
     """How many filings this corpus holds per ticker.
 
     Read from the filing headers rather than the index, so a coverage claim does not depend on
-    Qdrant being reachable — and so it stays correct if the index is mid-rebuild. Cached: 246
-    header reads, once per process, matching what `query.py` already does for the latest
-    fiscal year.
+    Qdrant being reachable — and so it stays correct if the index is mid-rebuild.
     """
-    from src.config import settings
-    from src.ingest import parse_header
+    from src.ingest import filing_headers
 
     counts: dict[str, int] = defaultdict(int)
-    for path in settings().corpus_dir.glob("*.txt"):
-        with path.open(encoding="utf-8", errors="replace") as handle:
-            fields, _ = parse_header(handle.read(4000))
-        if ticker := fields.get("ticker", "").strip():
+    for header in filing_headers():
+        if ticker := header.get("ticker", "").strip():
             counts[ticker] += 1
     return dict(counts)
 

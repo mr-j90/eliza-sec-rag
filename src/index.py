@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sys
 import uuid
+from dataclasses import asdict
 
 from qdrant_client import QdrantClient, models
 
@@ -92,23 +93,10 @@ def _point(chunk: Chunk, dense: list[float], sparse: models.SparseVector) -> mod
         # updates a point rather than duplicating it.
         id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{chunk.source_file}#{chunk.chunk_index}")),
         vector={"dense": dense, "sparse": sparse},
-        payload={
-            "chunk_id": chunk.chunk_id,
-            # Raw text, deliberately without the contextual prefix — this is what citations
-            # display, and an excerpt must show the filing's words, not our synthesized header.
-            "text": chunk.text,
-            "company": chunk.company,
-            "ticker": chunk.ticker,
-            "cik": chunk.cik,
-            "form_type": chunk.form_type,
-            "fiscal_year": chunk.fiscal_year,
-            "period_end": chunk.period_end,
-            "filing_date": chunk.filing_date,
-            "item_section": chunk.item_section,
-            "chunk_index": chunk.chunk_index,
-            "source_file": chunk.source_file,
-            "token_count": chunk.token_count,
-        },
+        # Every `Chunk` field, so the payload and the dataclass cannot drift apart. `text` is
+        # the raw passage, deliberately without the contextual prefix — this is what citations
+        # display, and an excerpt must show the filing's words, not our synthesized header.
+        payload=asdict(chunk),
     )
 
 
@@ -202,10 +190,6 @@ def main(argv: list[str]) -> int:
             f"[{position}/{len(files)}] {name}: {indexed} chunks (total {total})",
             flush=True,
         )
-    # Reconcile what we sent against what landed. Point ids are deterministic, so a
-    # collision overwrites silently — this run once reported 29,499 chunks while the
-    # collection held 21,453, and nothing raised. A count that disagrees is the cheapest
-    # possible detector, so it is checked rather than trusted.
     stored = count()
     print(
         f"done — sent {total} chunks, collection '{_settings().collection}' holds {stored} "
@@ -213,10 +197,11 @@ def main(argv: list[str]) -> int:
         flush=True,
     )
 
-    # Reconcile against the right denominator. Comparing `total` to the whole collection is
-    # only meaningful when the whole collection was just written; on a named subset it
-    # reports nonsense (re-indexing 54 filings once claimed "-19573 chunks did not land").
-    # For a subset, count only the points belonging to the files that were sent.
+    # Reconcile what we sent against what landed: point ids are deterministic, so a collision
+    # overwrites silently — this run once reported 29,499 chunks while the collection held
+    # 21,453, and nothing raised. Against the right denominator, though: comparing `total` to
+    # the whole collection is only meaningful when the whole collection was just written (on a
+    # named subset it once claimed "-19573 chunks did not land").
     if "--all" in argv:
         expected_scope = stored
     else:

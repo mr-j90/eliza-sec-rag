@@ -4,10 +4,8 @@ Dense is OpenAI `text-embedding-3-small` (1536d, cosine). Sparse is BM25 via Fas
 which runs **locally** — no API call, no key — which is worth knowing because it means the
 sparse half of hybrid retrieval keeps working when the provider does not.
 
-These are embedding calls, not generation. They are exempt from SPEC §5.2's one-call
-constraint, which is about the call that *produces the answer*; retrieval is allowed to do
-work beforehand. Keeping that distinction explicit matters, because "how many API calls does
-this make?" is a question the demo will get.
+These are embedding calls, not generation, so SPEC §5.2's one-call constraint — which is about
+the call that *produces the answer* — does not cover them.
 """
 
 from __future__ import annotations

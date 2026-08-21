@@ -1,17 +1,12 @@
 """The only place that talks to a model provider.
 
-Two SPEC constraints meet in this module:
+Two SPEC constraints meet here. **§2**: provider access sits behind one thin interface, so
+swapping providers is a one-file change — a demo talking point ("are we locked into OpenAI?"),
+so it has to be genuinely true. **§5.2**: exactly one call produces an answer, and there is one
+call site in the answer path, which is what makes the constraint checkable.
 
-- **§2** — provider access sits behind one thin interface, so swapping providers
-  is a one-file change rather than a grep across the codebase. This is a demo
-  talking point ("are we locked into OpenAI?"), so it needs to be genuinely true.
-- **§5.2** — exactly one LLM call produces an answer. There is one `complete()`
-  call site in the answer path, which is what makes the constraint checkable
-  rather than merely asserted.
-
-Eval-time LLM-as-judge calls are exempt from the one-call constraint. When they
-arrive they get their own clearly labelled entry point; they must never be routed
-through the answer path.
+Eval-time calls are exempt but never routed through the answer path — `src/eval/summarize.py` is
+the one that exists, and `tests/test_ask.py` names it.
 """
 
 from __future__ import annotations

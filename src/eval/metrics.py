@@ -2,17 +2,12 @@
 
     uv run python -m src.eval.metrics
 
-`Recall@k`, `MRR@10`, `nDCG@10` and `entity_coverage@k`. Relevance is **file-level**, per
-SPEC §7.1: a retrieved chunk contributes its `source_file`, and recall counts distinct
-files. Twenty chunks from one filing is one filing of coverage.
+`Recall@k`, `MRR@10`, `nDCG@10` and `entity_coverage@k`. Relevance is **file-level**, per SPEC
+§7.1: a retrieved chunk contributes its `source_file`, so twenty chunks from one filing is one
+filing of coverage.
 
-Two shapes here exist because the naive version would have been misleading:
-
-- **Unanswerable questions are excluded** and counted separately. They have no relevant filings,
-  so recall over them is undefined; averaging a zero in would understate every configuration
-  equally and say nothing about any of them.
-- **`entity_coverage@k` returns None where the question names no company.** Sector questions name
-  none by design, and scoring them 0.0 would drag the average down for behaviour that is correct.
+The caveats that ship with the numbers are in `run()`'s `note` field, which is written into every
+results file — a caveat only a reader of this module sees is a caveat the results do not carry.
 """
 
 from __future__ import annotations
@@ -55,15 +50,12 @@ def _files(retrieved: list[str], k: int) -> list[str]:
 def normalized_recall_at_k(retrieved: list[str], relevant: set[str], k: int) -> float:
     """`hits / min(k, |R|)` — recall against what was *attainable*, not against 1.0.
 
-    The only one of the audit's three metric fixes implemented here, because without it the
-    headline number is actively misleading rather than merely limited. Relevant-file counts in
-    this golden set run from **1 to 36**, so raw `recall@5` has a per-question ceiling between
-    **0.139 and 1.000** — on `cc-01` no configuration change can move it by more than 0.139 in
-    absolute terms. Averaging raw recall across those questions averages incommensurable
-    quantities, and the mean is then dominated by label cardinality rather than by retrieval.
+    Relevant-file counts in this golden set run from **1 to 36**, so raw `recall@5` has a
+    per-question ceiling between **0.139 and 1.000**: on `cc-01` no configuration change can move
+    it by more than 0.139. Averaging raw recall across those questions averages incommensurable
+    quantities, and the mean is dominated by label cardinality rather than by retrieval.
 
-    Reported alongside raw recall rather than replacing it, so the two can be compared and the
-    gap between them is itself visible.
+    Reported alongside raw recall rather than replacing it, so the gap between them stays visible.
     """
     if not relevant:
         return 0.0
@@ -303,15 +295,17 @@ def main(argv: list[str]) -> int:
         f"({document['n_unanswerable']} unanswerable excluded)",
         flush=True,
     )
-    for key in (f"normalized_recall@{k}" for k in RECALL_KS):
-        print(f"  {key:24s} {overall[key]}", flush=True)
-    for key in (f"recall@{k}" for k in RECALL_KS):
-        print(f"  {key:24s} {overall[key]}", flush=True)
-    print(f"  mrr@{RANK_K:<21d} {overall[f'mrr@{RANK_K}']}", flush=True)
-    print(f"  ndcg@{RANK_K:<20d} {overall[f'ndcg@{RANK_K}']}", flush=True)
-    for k in COVERAGE_KS:
-        suffix = " <- the budget the model actually sees" if k == COVERAGE_KS[-1] else ""
-        print(f"  entity_coverage@{k:<9d} {overall[f'entity_coverage@{k}']}{suffix}", flush=True)
+    reported = (
+        *(f"normalized_recall@{k}" for k in RECALL_KS),
+        *(f"recall@{k}" for k in RECALL_KS),
+        f"mrr@{RANK_K}",
+        f"ndcg@{RANK_K}",
+        *(f"entity_coverage@{k}" for k in COVERAGE_KS),
+    )
+    budget = f"entity_coverage@{COVERAGE_KS[-1]}"
+    for key in reported:
+        note = " <- the budget the model actually sees" if key == budget else ""
+        print(f"  {key:24s} {overall[key]}{note}", flush=True)
     print(
         f"  (coverage over {overall['entity_coverage_n']} questions naming a company)",
         flush=True,
