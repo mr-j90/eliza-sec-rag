@@ -114,9 +114,27 @@ def _to_chunk(payload: dict[str, Any]) -> Chunk:
 
 SHINGLE = 5
 NEAR_DUPLICATE = 0.8
-# Suppression removes results, so ask for more than we need and trim afterwards. Without this,
-# a question whose top hits are all the same boilerplate would come back short.
-OVERFETCH = 3
+
+# How the candidate pool is built and cut — measured 2026-08-21 (see `_search`). Relevance is
+# file-level (SPEC §7.1), and the failure this addresses was file-level: on questions whose
+# answer is spread across many filings — Pfizer/Merck patent expiration, the pharma sector —
+# the relevant filings were in the index but ranked past the old `k*3` cutoff, or lost their
+# slots to several chunks of the same filing. Three constants, each a distinct lever:
+#
+# - CANDIDATE_POOL: fuse this many candidates (× the final limit) before selecting. The old ×3
+#   left Pfizer's filings, ranked 30-100 in fusion, outside the pool entirely; ×10 brings all
+#   15/15 in. Fusion at this depth is a cheap Qdrant operation — it is the reranker, not the
+#   fetch, that costs (measured ~1.2s at 100 candidates), which is why the rerank input is
+#   bounded next rather than the fetch.
+# - RERANK_CAP: rerank at most this many, chosen file-diverse from the deep pool, so a filing
+#   ranked deep in fusion still reaches the cross-encoder without paying to rerank everything.
+# - PER_FILE_CAP: at most this many chunks per filing in the final cut, so k slots span ~k/2
+#   filings instead of being spent on the most vivid one. cap=2 (not 1) is deliberate — with
+#   many filings it behaves like one-per-file, but a company with few filings may still
+#   contribute a second passage rather than being padded out by a rival's boilerplate.
+CANDIDATE_POOL = 10
+RERANK_CAP = 60
+PER_FILE_CAP = 2
 
 
 def _shingles(text: str) -> set[str]:
@@ -157,6 +175,29 @@ def suppress_near_duplicates(
     return kept
 
 
+def file_diverse(results: list[Retrieved], limit: int, cap: int = PER_FILE_CAP) -> list[Retrieved]:
+    """Fill `limit` slots from `results` (kept in their given order), at most `cap` per filing.
+
+    Relevance is file-level, so a slot spent on a filing already represented buys no recall and
+    little for the reader — a comparison or a trend answer wants breadth across filings, not the
+    same 10-K quoted five times. Walked in passes so the slots still fill when distinct filings
+    are fewer than `limit`: pass one takes each filing's best chunk, pass two the second-best,
+    and so on up to `cap`. With filings to spare this yields one per filing; with few filings it
+    degrades gracefully to `cap` chunks each rather than returning short.
+    """
+    counts: dict[str, int] = {}
+    out: list[Retrieved] = []
+    for pass_cap in range(1, cap + 1):
+        for result in results:
+            if len(out) >= limit:
+                return out
+            source = result.chunk.source_file
+            if counts.get(source, 0) < pass_cap and result not in out:
+                out.append(result)
+                counts[source] = counts.get(source, 0) + 1
+    return out
+
+
 def retrieve(
     question: str, k: int = 20, *, query_filter: models.Filter | None = None
 ) -> list[Retrieved]:
@@ -178,27 +219,38 @@ def _search(
     dense: list[float],
     sparse: models.SparseVector,
 ) -> list[Retrieved]:
-    """One filtered hybrid search. Takes pre-computed vectors so a quota run embeds once."""
+    """One filtered hybrid search. Takes pre-computed vectors so a quota run embeds once.
+
+    The pipeline is fetch-deep, bound, rerank, spread — each step is a constant above with its
+    measurement. Fusion fetches `k * CANDIDATE_POOL` candidates because the filings a spread-out
+    question needs rank deep in fusion; the rerank input is then cut to `RERANK_CAP` *file-
+    diverse* chunks so the cross-encoder still sees a chunk from each deep-ranked filing without
+    being handed the whole pool; and the final cut spreads k across filings (`PER_FILE_CAP`).
+    """
     query = build_hybrid_query(
-        dense=dense, sparse=sparse, limit=k * OVERFETCH, query_filter=query_filter
+        dense=dense, sparse=sparse, limit=k * CANDIDATE_POOL, query_filter=query_filter
     )
     response = client().query_points(collection_name=settings().collection, **query)
     candidates = [
         Retrieved(chunk=_to_chunk(point.payload or {}), score=point.score or 0.0)
         for point in response.points
     ]
-    # Rerank the overfetched, de-duplicated candidates and *then* cut to k. Placed here
-    # rather than on the final merged set for two reasons: this is where there is genuinely
-    # something to choose between (3k candidates for k slots), and `retrieve_for` orders its
-    # output by company-then-section deliberately — reordering that by score would break the
-    # grouping that makes a comparison readable.
     deduped = suppress_near_duplicates(candidates)
+    # Bound what the reranker sees, but keep it file-diverse: a plain prefix of the deep pool
+    # would be all the top filing's chunks and would drop exactly the deep-ranked filings this
+    # fetch depth exists to surface. Reranking cost is ~linear in input (measured), so this is
+    # what keeps latency near the shallow-pool version.
+    for_rerank = file_diverse(deduped, RERANK_CAP)
     ranked, reranked = (
-        reorder(question, deduped) if settings().rerank_enabled else (deduped, False)
+        reorder(question, for_rerank) if settings().rerank_enabled else (for_rerank, False)
     )
     global _LAST_RERANKED
     _LAST_RERANKED = reranked
-    return ranked[:k]
+    # Spread the k slots across filings rather than taking the top-k, which clusters into the
+    # few filings that phrase the topic most strongly. `retrieve_for` re-orders the merge by
+    # company-then-section afterwards, so the score order here only decides *which* chunks win a
+    # slot, not their final position.
+    return file_diverse(ranked, k)
 
 
 # SPEC §5.3: each detected company gets `k/n`, with a floor so a four-company question does
