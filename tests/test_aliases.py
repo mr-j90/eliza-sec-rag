@@ -5,7 +5,7 @@ names. These assertions use names quoted from the corpus headers, so they disagr
 code if the derivation drifts.
 """
 
-from src.aliases import aliases, by_ticker, normalise, resolve
+from src.aliases import aliases, by_ticker, near_miss, normalise, resolve
 
 
 def test_every_company_in_the_corpus_is_known():
@@ -85,6 +85,48 @@ def test_names_no_rule_could_derive_from_the_filing_header():
     assert resolve("Raytheon") == "RTX"
     assert resolve("Google") == "GOOG"
     assert resolve("Facebook") == "META"
+
+
+def test_a_misspelt_name_still_finds_its_company():
+    """Measured 2026-08-21: "JP Morgen" answered "there are no filings for Morgen in this
+    corpus" — a typo reported as a corpus gap, which makes an honest refusal untrustworthy.
+    """
+    assert resolve("JP Morgen") == "JPM"
+    for misspelt, ticker in (
+        ("Micorsoft", "MSFT"), ("Teslla", "TSLA"), ("Amazn", "AMZN"), ("Nvida", "NVDA"),
+        ("Goldmann Sachs", "GS"), ("Wallmart", "WMT"), ("Lockhead Martin", "LMT"),
+        ("Berkshire Hathway", "BRK"),
+    ):
+        assert resolve(misspelt) == ticker, f"{misspelt!r} should still reach {ticker}"
+
+
+def test_a_near_miss_never_answers_as_a_different_company():
+    """The guard that matters more than the feature. A name absent from the corpus must not be
+    dragged onto its nearest neighbour — that is the wrong-issuer failure `DESCRIPTORS` exists
+    to prevent, and it would silently break the three unanswerable golden-set questions.
+    """
+    for absent in ("Shopify", "Ferrari", "Spotify", "Rivian", "General Motors",
+                   "Wells Fargo", "Coinbase", "Uber", "Airbnb", "Palantir"):
+        assert resolve(absent) is None, f"{absent!r} is not in this corpus and must not resolve"
+
+    # A near-miss has to be a *typo*, not a shorter name that resembles a longer one. Swept
+    # over the table rather than asserted on one pair, because the two rules that enforce it
+    # were both found by a leak: without the length slack "morgan" is a 0.857 match for
+    # "jpmorgan", and without the length floor "comca" is a 0.889 match for "coca".
+    table = aliases()
+    for probe in {alias[:-2] for alias in table if len(alias) > 6}:
+        assert probe in table or near_miss(probe) is None, (
+            f"{probe!r} is two characters short of a real alias and must not be dragged onto it"
+        )
+
+    # One dropped character still is a typo, and both sides of the ambiguity keep their own name.
+    assert near_miss("jpmorga") == "JPM"
+    assert resolve("Morgan Stanley") == "MS"
+    assert resolve("JPMorgan") == "JPM"
+
+    # An exact alias is never routed through the fuzzy path.
+    for alias, ticker in aliases().items():
+        assert resolve(alias) == ticker, f"{alias!r} stopped resolving exactly"
 
 
 def test_tickers_always_win_over_name_collisions():

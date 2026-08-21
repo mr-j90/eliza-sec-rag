@@ -50,6 +50,30 @@ def test_a_company_absent_from_the_corpus_is_detected_as_absent_not_ignored():
     assert "Shopify" in p.unresolved_mentions
 
 
+def test_a_misspelt_company_is_answered_rather_than_refused():
+    """The question as a user actually typed it, 2026-08-21. It came back "There are no filings
+    for Morgen in this corpus": the run "JP Morgen" matched no alias, "JP" was then dropped by
+    the short-token rule, and the leftover "Morgen" was reported as an absent company. A typo
+    presented as a corpus gap is the refusal contract firing on the wrong thing.
+    """
+    p = plan(
+        "What regulatory risks does JP Morgen have and that did that look like "
+        "over the last 2 years"
+    )
+    assert p.companies == ["JPM"]
+    assert p.unresolved_mentions == []
+    assert p.fiscal_years == (LATEST_FISCAL_YEAR - 1, LATEST_FISCAL_YEAR)
+
+
+def test_a_misspelling_never_outranks_a_name_the_corpus_spells_exactly():
+    """Near-misses are only tried after every exact span has failed. Inline, the longer span
+    "Compare Micorsoft" could fuzzy-match before "Amazon" was ever tested exactly.
+    """
+    p = plan("Compare Micorsoft and Amazon on cloud competition.")
+    assert p.companies == ["MSFT", "AMZN"]
+    assert p.unresolved_mentions == []
+
+
 def test_ordinary_capitalised_words_are_not_mistaken_for_companies():
     """The heuristic that finds Shopify must not find "Risk" or "Item"."""
     p = plan("What are the primary Risk Factors disclosed in Item 1A of recent filings?")

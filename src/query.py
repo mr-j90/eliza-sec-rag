@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 
-from src.aliases import DESCRIPTORS, aliases, by_ticker, normalise
+from src.aliases import DESCRIPTORS, aliases, by_ticker, near_miss, normalise
 from src.ingest import filing_headers, fiscal_period
 
 
@@ -127,6 +127,44 @@ _QUARTERLY = re.compile(r"\b(10-?Q|quarter|quarterly|q[1-4])\b", re.IGNORECASE)
 _ANNUAL = re.compile(r"\b(10-?K|annual|full[- ]year|fiscal\s+year\s+end)\b", re.IGNORECASE)
 
 
+def _match_at(
+    tokens: list[str], index: int, table: dict[str, str], known_tickers: dict[str, str]
+) -> tuple[int, str] | None:
+    """The longest span starting at `index` that names a company, as `(end, ticker)`.
+
+    Exact aliases across **every** span length first, near-misses only once all of them have
+    failed. Ordering matters: run longest-first with fuzzy matching inline and a typo'd long
+    span would outrank a shorter span the corpus spells exactly.
+
+    A misspelling has to be matched here rather than at `_record_unresolved`, because the run
+    is already broken up by then — "JP Morgen" loses "JP" to the short-token rule below and
+    leaves only "Morgen", which resembles nothing.
+    """
+    spans = [(end, " ".join(tokens[index:end])) for end in range(len(tokens), index, -1)]
+
+    for end, span in spans:
+        # A bare short ticker only counts written exactly as the ticker: `V` is Visa and `T`
+        # is AT&T, but a T-bill question is not an AT&T question.
+        if len(span) <= _SHORT_TICKER_CHARS:
+            if span in known_tickers:
+                return end, span
+            continue
+        ticker = table.get(normalise(span))
+        if ticker:
+            return end, ticker
+
+    for end, span in spans:
+        alias = normalise(span)
+        # Never fuzzy-match a short span or ordinary filing vocabulary — a two-character
+        # near-miss is a different ticker, not a typo.
+        if len(span) <= _SHORT_TICKER_CHARS or alias in _NOT_COMPANIES:
+            continue
+        ticker = near_miss(alias)
+        if ticker:
+            return end, ticker
+    return None
+
+
 def _companies_in(question: str) -> tuple[list[str], list[str]]:
     """(tickers in mention order, capitalised names that did not resolve).
 
@@ -148,24 +186,10 @@ def _companies_in(question: str) -> tuple[list[str], list[str]]:
         pending: list[str] = []  # consecutive unmatched, non-vocabulary words
 
         while index < len(tokens):
-            matched_to = None
-            for end in range(len(tokens), index, -1):
-                span = " ".join(tokens[index:end])
+            matched = _match_at(tokens, index, table, known_tickers)
 
-                # A bare short ticker only counts written exactly as the ticker: `V` is
-                # Visa and `T` is AT&T, but a T-bill question is not an AT&T question.
-                if len(span) <= _SHORT_TICKER_CHARS:
-                    if span in known_tickers:
-                        matched_to, ticker = end, span
-                        break
-                    continue
-
-                ticker = table.get(normalise(span))
-                if ticker:
-                    matched_to = end
-                    break
-
-            if matched_to is not None:
+            if matched is not None:
+                matched_to, ticker = matched
                 if ticker not in found:
                     found.append(ticker)
                 if pending:

@@ -75,7 +75,7 @@ this builds on an earlier attempt whose SPEC was audited in
 version, with `components/chat/`, `sources.tsx` and the backend contract), or the
 `__pycache__` directories.
 
-**Do bring across** `PROMPT_LOG.md` (ticket 11 needs it) and read `.eng/STATE.md` for
+**Do bring across** `PROMPT_LOG.md` (ticket 11 needs it) for
 context before closing this — it half-identifies the temporal-label conflict that ticket 08
 deals with.
 

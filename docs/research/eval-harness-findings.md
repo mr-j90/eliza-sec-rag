@@ -150,7 +150,7 @@ Every correctly-suppressed duplicate lowers `recall@k` while improving the answe
 alongside `recall@10 = 0.533` is exactly the signature of this: what is retrieved is highly
 relevant and well-ordered, there is simply one passage per distinct idea rather than sixteen.
 
-The prior repo's own `.eng/STATE.md` half-identifies this for the temporal row:
+The prior repo's own half-identifies this for the temporal row:
 
 > `tm-01` labels 16 NVIDIA filings for "how has this changed over the last two years". A *correct*
 > answer applies the time filter and retrieves from two years of them, so file-level recall will
@@ -183,7 +183,7 @@ Option 2 is the cleanest: it measures each mechanism on the axis it was designed
    as an ablation metric only across quota-on vs quota-off rows.
 3. **Unanswerable questions are excluded from retrieval metrics** (3 of 25, correctly — recall is
    undefined with no relevant files). But refusal correctness is then measured nowhere in
-   `eval/results/`. `.eng/STATE.md` confirms the gap: the only Shopify assertion tests that the
+   `eval/results/`. confirms the gap: the only Shopify assertion tests that the
    *alias* resolves to nothing, not that the answer refuses. For a diligence tool this is the single
    highest-value behavior to measure.
 4. **n=22 needs a significance test.** With 22 questions, a 2–3 point difference between ablation
@@ -200,5 +200,4 @@ Option 2 is the cleanest: it measures each mechanism on the axis it was designed
 | `rag/eval/build_golden_set.py` | labels = probe-term match ∩ named tickers, file-level |
 | `rag/eval/results/retrieval_metrics.json` | one config only; no ablation rows |
 | `rag/src/retrieve.py:84–88, 98–159` | global near-duplicate suppression before top-k cut |
-| `rag/.eng/STATE.md` | ablation listed as pending; temporal-label conflict noted |
 | `rag/SPEC.md` §7 | states eval is the differentiator; defines the unbuilt 5-row table |

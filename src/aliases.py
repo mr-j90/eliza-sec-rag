@@ -15,6 +15,7 @@ only owns the vocabulary.
 from __future__ import annotations
 
 import re
+from difflib import get_close_matches
 from functools import lru_cache
 
 from src.ingest import filing_headers
@@ -135,6 +136,50 @@ def aliases() -> dict[str, str]:
     return table
 
 
+# A misspelt name should still find its company. Measured 2026-08-21: "What regulatory risks
+# does JP Morgen have" answered "there are no filings for Morgen in this corpus" — a typo
+# reported as a corpus gap, which is the refusal contract firing on the wrong thing and the one
+# failure mode that makes an honest refusal untrustworthy.
+#
+# Two guards, because resolving to the *wrong* company is worse than refusing:
+#
+# - `_TYPO_CUTOFF` on difflib's ratio. Swept against the shipped 145-alias table: 0.85 admits a
+#   dropped, doubled or transposed letter ("Nvida", "Teslla", "Goldmann Sachs", "Lockhead
+#   Martin") while every out-of-corpus name in the golden set — Shopify, Ferrari, Spotify,
+#   Rivian — and every word in `query._NOT_COMPANIES` still matches nothing at all.
+# - A length difference of at most one, because a typo changes characters and does not add
+#   words. Without it "morgan" scores 0.857 against "jpmorgan", so a Morgan Stanley question
+#   would answer as JPMorgan. (Here it resolves exactly to MS first, but only by luck of the
+#   corpus holding both.)
+# - A floor on both sides, because a short alias cannot absorb a wrong character and stay
+#   itself. Measured: "comca" scores 0.889 against "coca", so a four-letter distinctive word
+#   would answer a Comcast question as Coca-Cola. Five is the lowest floor that still admits
+#   "Amazn" and "Nvida", the shortest typos worth catching.
+_TYPO_CUTOFF = 0.85
+_TYPO_LENGTH_SLACK = 1
+_SHORTEST_FUZZY = 5
+
+
+def near_miss(alias: str) -> str | None:
+    """The ticker for a *misspelt* alias, or None. `alias` must already be normalised."""
+    if len(alias) < _SHORTEST_FUZZY:
+        return None
+    table = aliases()
+    candidates = [
+        known
+        for known in table
+        if len(known) >= _SHORTEST_FUZZY
+        and abs(len(known) - len(alias)) <= _TYPO_LENGTH_SLACK
+    ]
+    close = get_close_matches(alias, candidates, n=1, cutoff=_TYPO_CUTOFF)
+    return table[close[0]] if close else None
+
+
 def resolve(text: str) -> str | None:
-    """The ticker for a company name or ticker, or None if it isn't in the corpus."""
-    return aliases().get(normalise(text))
+    """The ticker for a company name or ticker, or None if it isn't in the corpus.
+
+    Exact first, then near-miss, so a spelling the corpus actually uses can never be beaten by
+    one that merely resembles it.
+    """
+    alias = normalise(text)
+    return aliases().get(alias) or near_miss(alias)
