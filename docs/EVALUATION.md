@@ -1,5 +1,8 @@
 # How this system's quality was evaluated
 
+> Mechanics — what runs, where labels come from, how to add a question — are in
+> [`EVAL_WALKTHROUGH.md`](EVAL_WALKTHROUGH.md). This document is the interpretation.
+
 The brief asks for notes on how quality was evaluated. The short version: **there is a
 pass/fail gate that runs on every change, one retrieval metric that can actually move, and
 three widely-used metrics that were measured, understood, and then deliberately not relied
