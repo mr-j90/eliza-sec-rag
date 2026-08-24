@@ -4,6 +4,7 @@
 - Being able to have inline citations and backlinks to the document section and such.
 	- Should be able to anchor back on the HTML since are txt documents do have a source URL.
 - Being able to have a entry point for users to manage CIKs and start-end dates of documents that would be desired to be pulled into our RAG solution.
+- Evolve table ingestion beyond the current pipe-delimited text chunks and caption/period-header binding: preserve each table's identity, headers, units/scales, periods, rows, columns, and cells as structured data alongside the existing text chunks. This should enable reliable cell-level numeric comparison while retaining the current chunks for retrieval and citations.
 - More robust evaluation suite; log user prompts to run evaluations based on real search behavior.
 	- Capture anonymized production-style prompts (with metadata like date filters, entity filters, and refusal outcomes) to build a rolling evaluation set.
 	- Bucket prompts by intent (fact lookup, comparison, trend, temporal query, etc.) so we can track pass/fail and regression rates by query type.
