@@ -113,6 +113,57 @@ Computed per question in `src/eval/metrics.py`, then averaged overall and by cat
 | `ndcg@10` | 10 | rank-discounted gain vs ideal ordering | saturated (~0.92), same reason |
 | `entity_coverage@k` | 10, **20** | named companies present in the retrieved set | the one that moves; pinned at 1.0 by quotas at k=20 |
 
+All five score at **file level**: the ranked list is the distinct `source_file`s in the top-k
+chunks, first occurrence wins, and a file is relevant if it's in the question's label. Now
+each one — what it does, why it's here, how we use it.
+
+### `recall@k` — of the labelled filings, how many did we find
+
+`hits / |R|` at k ∈ {5, 10, 20}. It's here because it's the metric every reader expects and
+SPEC §7.2 requires it. We **report it but never compare on it**: labels span 1–36 filings
+per question, so at k=5 one question's ceiling is 0.139 while another's is 1.000. Averaging
+those mixes incommensurable quantities — the mean tracks label size, not retrieval quality.
+Read it only next to its normalized twin; the gap between them is the label-breadth effect.
+
+### `normalized_recall@k` — recall against what was attainable
+
+`hits / min(k, |R|)`. Since at most k distinct files fit in k chunks, `min(k, |R|)` is the
+best any retriever could do, so every question can score 1.0 and the average is meaningful.
+**This is the headline number** — the one ablation rows are compared on and the one a
+regression gate should watch. It exists because raw `recall@10 = 0.521` reads as "we miss
+half the filings" when the truth is "we find 64% of what the labels permit".
+
+### `mrr@10` — how early does the first hit land
+
+`1/rank` of the first relevant filing in the top 10, else 0. Standard rank metric, kept for
+completeness — and **deliberately not relied on**: it sits at ~0.98 because a file-level
+label restricted to the named ticker makes nearly any chunk from the right company a hit,
+so the first result is almost always relevant. It's measuring the entity filter, not
+ranking, and would stay near-perfect for a system retrieving the right companies and the
+wrong passages. Its one use so far: the rerank ablation, where the 0.943 → 1.000 move was
+the expected shape (reordering helps rank metrics at small k).
+
+### `ndcg@10` — is the whole top-10 well ordered
+
+Binary-gain DCG over the top 10, divided by the ideal ordering's DCG. Same story as MRR:
+saturated (~0.92) for the same label-granularity reason, so ablation rows differ in the
+third decimal and nothing can be concluded. We keep it because its *relationship* to recall
+is diagnostic — high nDCG beside middling recall is the signature of near-duplicate
+suppression working (everything retrieved is relevant and well ordered; there's just one
+passage per idea instead of sixteen restatements), not of a retrieval failure.
+
+### `entity_coverage@k` — did every company asked about make it in
+
+Of the tickers the question names, the fraction present in the top k; `None` (excluded from
+the average, not zeroed) when the question names nobody. The one custom metric, and the one
+that earns its place: it maps to the failure a business reader recognises instantly — "you
+asked about three companies and the answer covers one" — and it's why per-company quotas
+exist. How we use it is specific: at k=20 the quota design **guarantees** 1.0, so it is not
+evidence retrieval is good — it's an *ablation* metric (quota-on vs quota-off) and an
+*invariant alarm*: anything under 1.0 at the budget means quotas broke. The @10 figure
+(~0.80) is reported only to show the company→section→date ordering effect — a third
+company's chunks legitimately sit at ranks 13–18, and the model sees all 20 anyway.
+
 Mechanics that matter when reading a results file:
 
 - **Coverage is reported at the retrieval budget (20), not just 10**, because results are

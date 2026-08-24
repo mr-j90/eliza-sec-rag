@@ -12,6 +12,33 @@ A **not-yet-implemented** RAG system over SEC filings, built as a timeboxed (~4h
 - **CLAUDE.md** (here) carries the decided parameters in actionable form, plus **measured corpus facts** that resolve SPEC §11's open questions.
 - **Where a measured fact below contradicts SPEC.md, the measured fact wins** — those cases are called out explicitly in "Corrections to SPEC.md". Everywhere else, SPEC.md governs. Do not re-litigate its decisions; implement them.
 
+## How work gets done here
+
+**Always invoke the `ponytail:ponytail` skill (`/ponytail`, level `full`) before writing or
+changing code in this repo** — including inside subagents, which do not inherit the session hook.
+The ladder is the house style: does it need to exist → does something in `src/`/`frontend/lib`
+already do it → stdlib/native → already-installed dependency → one line → minimum that works.
+Shortest working diff, deletion over addition, one runnable check for non-trivial logic, a
+`# ponytail:` comment on any deliberate corner-cut. It shortens the solution, never the reading
+— this repo's failures have all been silent (overwritten points, mislabelled sections, lost
+coverage), so trace the whole path first, then be lazy.
+
+**Use the project agents in `.claude/agents/` rather than doing everything in the main thread.**
+The chain is `pm → architect → backend-eng / frontend-eng → qa-eng`; each one loads `ponytail`
+itself. Skip straight to an engineer for a small, obvious ask — a brief for a one-line change is
+waste. Enter at:
+
+| Situation | Start at |
+|---|---|
+| Vague ask, spans both stacks, or scope undecided | `pm` |
+| Scope clear but the shape isn't — new contract, spans modules | `architect` |
+| Anything under `src/` or `tests/` | `backend-eng` |
+| Anything under `frontend/` | `frontend-eng` |
+| After an implementation lands, before reporting done | `qa-eng` |
+
+Independent work goes out as parallel agent calls in one message. `qa-eng` reports and does not
+redesign — structural findings go back to `architect` with the evidence.
+
 ## The hard constraint
 
 **Exactly one LLM API call produces the answer.** Everything else — entity extraction, time-scope parsing, form-type hints, query planning — must be deterministic/rule-based (SPEC §5.2). This is a demo-defensibility constraint, not a performance one: an interviewer will check it. Eval-time LLM-as-judge calls are exempt but must be labeled as such wherever they appear, in code and in the README.

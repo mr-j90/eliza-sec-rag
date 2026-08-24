@@ -340,11 +340,18 @@ function Traceability({ summary }: { summary: EvalSummary }) {
       </p>
       <dl className="mt-3 space-y-2 text-xs">
         {summary.findings.map((finding) => (
-          <div key={finding.point} className="grid gap-1 md:grid-cols-[1fr_14rem] md:gap-4">
+          <div
+            key={finding.point}
+            className="grid gap-1 md:grid-cols-[minmax(0,1fr)_14rem] md:gap-4"
+          >
             <dt className="text-muted-foreground">{finding.point}</dt>
-            <dd className="font-mono">
+            <dd className="min-w-0 font-mono">
               {finding.metrics.length > 0 ? (
-                finding.metrics.join(", ")
+                finding.metrics.map((metric) => (
+                  <div key={metric} className="break-all">
+                    {metric}
+                  </div>
+                ))
               ) : (
                 <span className="not-italic text-muted-foreground/60">
                   no measurement named
