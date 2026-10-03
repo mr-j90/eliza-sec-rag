@@ -87,27 +87,24 @@ _NOT_COMPANIES = {
     "this", "that", "these", "those", "recent", "primary", "major", "each", "both",
 }
 
-# Sequences of capitalised words, so "General Electric" is considered before "General".
-#
-# A run may cross the lowercase connectives that sit inside legal names — "Bank of America",
-# "Procter and Gamble". Without that, `Bank of America` was never tested as a span at all: the
-# runs were "Bank" and "America" separately, and the only reason it ever resolved was the
-# leading-word rule mapping bare "bank" → BAC, which resolved "bank regulations" the same way.
-# Fixing the alias table without this would have taken a company with 4 filings here down to
-# ticker-only.
-_WORD = r"[A-Z][a-zA-Z0-9&.\-]*"
-_CAPITALISED = re.compile(
-    rf"\b({_WORD}(?:\s+(?:of|and|the|de|&)\s+{_WORD}|\s+{_WORD})*)\b"
-)
+# Every word is a candidate, not just capitalised runs. Measured 2026-10-01: "what did apple
+# say about tariffs" resolved to nothing and ran as a sector question, because the extractor
+# read only capitalised runs — a reader who types in lowercase got an answer about twenty
+# companies to a question about one. Capitalisation is still the only signal for an *unknown*
+# company (see `_companies_in`). Possessives are stripped so "NVIDIA's" resolves as NVIDIA.
+_TOKEN = re.compile(r"[A-Za-z0-9][\w&.\-'’]*")
+_POSSESSIVE = re.compile(r"['’]s$")
 
 # Short tickers collide with ordinary words, so they only resolve as a standalone uppercase
 # token: `V` is Visa and `T` is AT&T, but a question about a T-bill is not about AT&T.
 _SHORT_TICKER_CHARS = 2
 
-# A run may *contain* these (see `_CAPITALISED`), but once a span has failed to resolve they
-# are what it should be split on: "Spotify and Rivian" is two absent companies to name, not one
-# phrase. Shorter connectives are already caught by the `_SHORT_TICKER_CHARS` branch below.
-_CONNECTIVES = {"and", "the"}
+# Aliases that are also ordinary words in filing prose. Written in lowercase they are taken as
+# the word: "cost of revenue" is not Costco and an "H-1B visa" is not Visa. Capitalised, or as
+# the ticker (COST, TGT), they still resolve.
+# ponytail: hand-kept list, add to it from a wrong-issuer report; swap for a word-frequency
+# check only if it keeps growing.
+_AMBIGUOUS_LOWERCASE = {"cost", "target", "cat", "ups", "chase", "gamble", "visa"}
 
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
 _LAST_N_YEARS = re.compile(
@@ -139,6 +136,10 @@ def _match_at(
     A misspelling has to be matched here rather than at `_record_unresolved`, because the run
     is already broken up by then — "JP Morgen" loses "JP" to the short-token rule below and
     leaves only "Morgen", which resembles nothing.
+
+    Exact matching is case-insensitive; fuzzy matching is only tried on capitalised spans. A
+    lowercase near-miss is far more often a common word than a typo'd proper noun — "goods"
+    scores 0.889 against "goog", so "consumer goods" would answer as Alphabet.
     """
     spans = [(end, " ".join(tokens[index:end])) for end in range(len(tokens), index, -1)]
 
@@ -149,15 +150,20 @@ def _match_at(
             if span in known_tickers:
                 return end, span
             continue
-        ticker = table.get(normalise(span))
-        if ticker:
+        alias = normalise(span)
+        ticker = table.get(alias)
+        if ticker and (span[0].isupper() or alias not in _AMBIGUOUS_LOWERCASE):
             return end, ticker
 
     for end, span in spans:
         alias = normalise(span)
-        # Never fuzzy-match a short span or ordinary filing vocabulary — a two-character
-        # near-miss is a different ticker, not a typo.
-        if len(span) <= _SHORT_TICKER_CHARS or alias in _NOT_COMPANIES:
+        # Never fuzzy-match a short span, a lowercase span, or ordinary filing vocabulary — a
+        # two-character near-miss is a different ticker, not a typo.
+        if (
+            len(span) <= _SHORT_TICKER_CHARS
+            or alias in _NOT_COMPANIES
+            or not all(t[0].isupper() for t in tokens[index:end])
+        ):
             continue
         ticker = near_miss(alias)
         if ticker:
@@ -168,53 +174,48 @@ def _match_at(
 def _companies_in(question: str) -> tuple[list[str], list[str]]:
     """(tickers in mention order, capitalised names that did not resolve).
 
-    Capitalised runs glue sentence-initial words onto company names — "Compare JPMorgan and
-    Apple" yields the run "Compare JPMorgan" — so each run is scanned for the **longest
-    sub-span that resolves**, left to right, rather than tested whole. Without that,
-    "Compare JPMorgan" resolves to nothing and reads as an unknown company.
+    Every token is a candidate start, scanned for the **longest sub-span that resolves** —
+    so "Compare JPMorgan" finds JPMorgan rather than reading as an unknown company, and
+    "what did apple say" finds Apple. Only a run of *capitalised* words that fails to
+    resolve is recorded as unresolved: for a company this corpus does not hold,
+    capitalisation is the one deterministic signal there is, and a lowercase "colgate" is
+    indistinguishable from any other word. That question falls through to an unfiltered
+    search and the system prompt's rule against substituting companies.
     """
     table = aliases()
     known_tickers = by_ticker()
+    tokens = [_POSSESSIVE.sub("", token).rstrip(".") for token in _TOKEN.findall(question)]
 
     found: list[str] = []
     unresolved: list[str] = []
+    pending: list[str] = []  # consecutive unmatched capitalised, non-vocabulary words
+    index = 0
 
-    for match in _CAPITALISED.finditer(question):
-        # Strip a trailing possessive so "NVIDIA's" resolves as NVIDIA.
-        tokens = re.sub(r"['’]s\b", "", match.group(1)).split()
-        index = 0
-        pending: list[str] = []  # consecutive unmatched, non-vocabulary words
+    while index < len(tokens):
+        matched = _match_at(tokens, index, table, known_tickers)
 
-        while index < len(tokens):
-            matched = _match_at(tokens, index, table, known_tickers)
-
-            if matched is not None:
-                matched_to, ticker = matched
-                if ticker not in found:
-                    found.append(ticker)
-                if pending:
-                    _record_unresolved(pending, unresolved)
-                    pending = []
-                index = matched_to
-                continue
-
-            word = tokens[index]
-            if (
-                normalise(word) in _NOT_COMPANIES
-                or word.lower() in _CONNECTIVES
-                or len(word) <= _SHORT_TICKER_CHARS
-            ):
-                # Ordinary filing or question vocabulary breaks the run.
-                if pending:
-                    _record_unresolved(pending, unresolved)
-                    pending = []
-            else:
-                pending.append(word)
-            index += 1
-
-        if pending:
+        if matched is not None:
+            index, ticker = matched
+            if ticker not in found:
+                found.append(ticker)
             _record_unresolved(pending, unresolved)
+            pending = []
+            continue
 
+        word = tokens[index]
+        if (
+            word[0].isupper()
+            and normalise(word) not in _NOT_COMPANIES
+            and len(word) > _SHORT_TICKER_CHARS
+        ):
+            pending.append(word)
+        else:
+            # Lowercase words, digits, and ordinary filing or question vocabulary end a run.
+            _record_unresolved(pending, unresolved)
+            pending = []
+        index += 1
+
+    _record_unresolved(pending, unresolved)
     return found, unresolved
 
 

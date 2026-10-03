@@ -87,6 +87,8 @@ The full research is in [`docs/research/`](docs/research/); how quality was meas
 
 ## How a question is answered
 
+The long form, with every out-of-corpus branch, is `docs/ARCHITECTURE.md`.
+
 ```
 question
   │

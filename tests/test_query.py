@@ -89,6 +89,26 @@ def test_short_tickers_do_not_match_ordinary_prose():
     assert "V" in p2.companies, "an explicit standalone ticker should still resolve"
 
 
+def test_a_lowercase_company_name_still_resolves():
+    """A reader who types in lowercase asked about one company, not a sector. Measured
+    2026-10-01: "what did apple say about tariffs" resolved to nothing and ran unfiltered.
+    """
+    assert plan("what did apple say about tariffs").companies == ["AAPL"]
+    assert plan("compare jpmorgan and bank of america").companies == ["JPM", "BAC"]
+    assert plan("does tgt discuss theft").companies == ["TGT"]
+
+
+def test_a_lowercase_common_word_is_not_a_company():
+    """`cost` is Costco's ticker and `target` is Target's name. Written in lowercase in filing
+    prose they are the words, and resolving them would quota in a company nobody asked about.
+    Capitalised, they still resolve.
+    """
+    assert plan("how has apple's cost structure changed").companies == ["AAPL"]
+    assert plan("what is the price target for Target").companies == ["TGT"]
+    # Fuzzy matching stays capitalised-only: "goods" scores 0.889 against "goog".
+    assert plan("what do filings say about consumer goods").companies == []
+
+
 # --- time scope ---
 
 
